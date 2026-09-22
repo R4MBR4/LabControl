@@ -1,18 +1,18 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Cpu, Lock, Mail, AlertCircle, ArrowRight, ShieldCheck, UserCheck } from 'lucide-react';
+import { Cpu, Lock, Mail, AlertCircle, ArrowRight, ShieldCheck, UserCheck, Sparkles } from 'lucide-react';
 
 export default function Login() {
-  const [email, setEmail] = useState('');
-  const [senha, setSenha] = useState('');
+  const [email, setEmail] = useState('admin@labcontrol.com');
+  const [senha, setSenha] = useState('admin123');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setError('');
     setLoading(true);
 
@@ -26,10 +26,19 @@ export default function Login() {
     }
   };
 
-  const fillDemo = (demoEmail, demoPass) => {
+  const handleQuickLogin = async (demoEmail, demoPass) => {
     setEmail(demoEmail);
     setSenha(demoPass);
     setError('');
+    setLoading(true);
+    try {
+      await login(demoEmail, demoPass);
+      navigate('/dashboard');
+    } catch (err) {
+      setError('Erro ao iniciar sessão demo');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -42,6 +51,10 @@ export default function Login() {
         <p className="mt-1 text-sm text-slate-600 font-medium">
           Plataforma de Gestão e Rastreabilidade de Espaços e Equipamentos
         </p>
+        <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-xs font-semibold shadow-xs">
+          <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+          <span>Ambiente de Demonstração Interativo Online</span>
+        </div>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
@@ -91,7 +104,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-semibold text-sm transition shadow-md shadow-teal-600/20 disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-semibold text-sm transition shadow-md shadow-teal-600/20 disabled:opacity-50 cursor-pointer"
             >
               {loading ? (
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -104,31 +117,31 @@ export default function Login() {
             </button>
           </form>
 
-          {/* Dica para Avaliação Acadêmica */}
+          {/* Acesso em 1 Clique para Teste da Equipe */}
           <div className="mt-8 pt-6 border-t border-slate-100">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 text-center mb-3">
-              Preenchimento Rápido (Ambiente de Avaliação)
+              Acesso em 1 Clique (Para Testes do Grupo)
             </p>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => fillDemo('admin@labcontrol.com', 'admin123')}
-                className="flex items-center justify-center gap-1.5 p-2 rounded-lg border border-purple-200 bg-purple-50/50 hover:bg-purple-100/50 text-purple-700 text-xs font-medium transition"
+                onClick={() => handleQuickLogin('admin@labcontrol.com', 'admin123')}
+                className="flex items-center justify-center gap-1.5 p-2.5 rounded-xl border border-purple-200 bg-purple-50 hover:bg-purple-100/70 text-purple-700 text-xs font-bold transition shadow-2xs cursor-pointer"
               >
-                <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
-                <span>Admin Demo</span>
+                <ShieldCheck className="w-4 h-4 text-purple-600" />
+                <span>Entrar como Admin</span>
               </button>
               <button
                 type="button"
-                onClick={() => fillDemo('aluno@labcontrol.com', 'aluno123')}
-                className="flex items-center justify-center gap-1.5 p-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-medium transition"
+                onClick={() => handleQuickLogin('aluno@labcontrol.com', 'aluno123')}
+                className="flex items-center justify-center gap-1.5 p-2.5 rounded-xl border border-teal-200 bg-teal-50 hover:bg-teal-100/70 text-teal-700 text-xs font-bold transition shadow-2xs cursor-pointer"
               >
-                <UserCheck className="w-3.5 h-3.5 text-slate-600" />
-                <span>Usuário Demo</span>
+                <UserCheck className="w-4 h-4 text-teal-600" />
+                <span>Entrar como Aluno</span>
               </button>
             </div>
-            <p className="text-[10px] text-slate-400 text-center mt-2">
-              Utiliza as credenciais existentes na tabela <code className="text-slate-600">usuario</code> do seu banco.
+            <p className="text-[11px] text-slate-400 text-center mt-3">
+              Não necessita de banco de dados ativo. Os dados são gravados localmente no navegador durante o teste.
             </p>
           </div>
         </div>
