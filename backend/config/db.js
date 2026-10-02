@@ -3,6 +3,9 @@ const dotenv = require('dotenv');
 const path = require('path');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+
+const isCloud = process.env.DB_HOST && (process.env.DB_HOST.includes('tidbcloud.com') || process.env.DB_SSL === 'true');
 
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
@@ -15,7 +18,11 @@ const dbConfig = {
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
-  decimalNumbers: true
+  decimalNumbers: true,
+  ssl: isCloud ? {
+    minVersion: 'TLSv1.2',
+    rejectUnauthorized: true
+  } : undefined
 };
 
 const pool = mysql.createPool(dbConfig);
