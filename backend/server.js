@@ -19,6 +19,7 @@ const manutencaoRoutes = require('./routes/manutencaoRoutes');
 const consumivelRoutes = require('./routes/consumivelRoutes');
 const capacitacaoRoutes = require('./routes/capacitacaoRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const tabelasRoutes = require('./routes/tabelasRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -55,6 +56,7 @@ app.use('/api/manutencoes', manutencaoRoutes);
 app.use('/api/consumiveis', consumivelRoutes);
 app.use('/api/capacitacoes', capacitacaoRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/tabelas', tabelasRoutes);
 
 // Rota 404 para endpoints inexistentes
 app.use('/api/*', (req, res) => {
