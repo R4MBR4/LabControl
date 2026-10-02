@@ -7,10 +7,9 @@ const isGitHubPages = typeof window !== 'undefined' && (
 );
 
 const isExplicitDemo = typeof window !== 'undefined' && localStorage.getItem('labcontrol_demo_mode') === 'true';
-const noApiConfigured = !import.meta.env.VITE_API_URL;
 
-// Em modo GitHub Pages ou sem URL de API configurada, utiliza o Mock Store para demo interativa
-const shouldUseMock = isGitHubPages || isExplicitDemo || noApiConfigured;
+// Em modo GitHub Pages estático sem URL de API na nuvem, utiliza o Mock Store para navegação
+const shouldUseMock = (isGitHubPages && !import.meta.env.VITE_API_URL) || isExplicitDemo;
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
