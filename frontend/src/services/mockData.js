@@ -1,5 +1,5 @@
 // Banco de dados simulado (Mock Database) para demonstração interativa sem necessidade de backend/MySQL ativo
-const STORAGE_KEY = 'labcontrol_demo_db_v1';
+const STORAGE_KEY = 'labcontrol_demo_db_v2';
 
 const initialData = {
   usuarios: [
@@ -33,7 +33,7 @@ const initialData = {
       data_inicio: new Date(Date.now() - 3600000).toISOString(),
       data_fim: new Date(Date.now() + 7200000).toISOString(),
       finalidade: 'Aula prática de Prototipagem Rápida',
-      status: 'EM_ANDAMENTO'
+      status: 'em_andamento'
     },
     {
       id: 2,
@@ -46,7 +46,7 @@ const initialData = {
       data_inicio: new Date(Date.now() + 86400000).toISOString(),
       data_fim: new Date(Date.now() + 93600000).toISOString(),
       finalidade: 'Pesquisa TCC - Controle Cinemático',
-      status: 'CONFIRMADA'
+      status: 'confirmada'
     },
     {
       id: 3,
@@ -59,7 +59,7 @@ const initialData = {
       data_inicio: new Date(Date.now() + 172800000).toISOString(),
       data_fim: new Date(Date.now() + 180000000).toISOString(),
       finalidade: 'Treinamento Institucional de Docentes',
-      status: 'PENDENTE'
+      status: 'pendente'
     }
   ],
   utilizacoes: [
@@ -272,7 +272,7 @@ export function handleMockRequest(method, url, data) {
     const eqDisp = db.equipamentos.filter(e => e.status === 'DISPONIVEL').length;
     const eqUso = db.equipamentos.filter(e => e.status === 'EM_USO').length;
     const eqMan = db.equipamentos.filter(e => e.status === 'MANUTENCAO').length;
-    const resAtivas = db.reservas.filter(r => r.status !== 'CANCELADA').length;
+    const resAtivas = db.reservas.filter(r => (r.status || '').toLowerCase() !== 'cancelada').length;
     const ocAbertas = db.ocorrencias.filter(o => o.status !== 'RESOLVIDA').length;
     const manAtivas = db.manutencoes.filter(m => m.status !== 'CONCLUIDA').length;
     const criticos = db.consumiveis.filter(c => c.estoque_critico);
@@ -380,14 +380,14 @@ export function handleMockRequest(method, url, data) {
         id: Date.now(),
         usuario_id: u.id,
         usuario_nome: u.nome,
-        espaco_id: data.espaco_id,
+        espaco_id: Number(data.espaco_id) || (esp ? esp.id : null),
         espaco_nome: esp ? esp.nome : 'Espaço Reservado',
-        equipamento_id: data.equipamento_id || null,
+        equipamento_id: data.equipamento_id ? Number(data.equipamento_id) : null,
         equipamento_nome: eq ? eq.nome : null,
         data_inicio: data.data_inicio,
         data_fim: data.data_fim,
         finalidade: data.finalidade || 'Uso acadêmico',
-        status: 'CONFIRMADA'
+        status: 'confirmada'
       };
       db.reservas.unshift(nova);
       saveStorage(db);
@@ -395,12 +395,31 @@ export function handleMockRequest(method, url, data) {
     }
     return ok(db.reservas);
   }
+
+  // Cancelar reserva explicitamente: /reservas/:id/cancelar
+  if (cleanUrl.match(/\/reservas\/\d+\/cancelar/)) {
+    const id = Number(cleanUrl.split('/')[2]);
+    const idx = db.reservas.findIndex(r => Number(r.id) === id);
+    if (idx !== -1) {
+      db.reservas[idx].status = 'cancelada';
+      saveStorage(db);
+      return ok({ message: 'Reserva cancelada com sucesso', reserva: db.reservas[idx] });
+    }
+    return { data: { error: 'Reserva não encontrada' }, status: 404, statusText: 'Not Found' };
+  }
+
+  // Atualização ou remoção genérica de reserva: /reservas/:id
   if (cleanUrl.match(/\/reservas\/\d+/)) {
     const id = Number(cleanUrl.split('/')[2]);
-    if (method.toUpperCase() === 'PUT' || method.toUpperCase() === 'PATCH') {
-      const idx = db.reservas.findIndex(r => r.id === id);
-      if (idx !== -1) {
-        db.reservas[idx] = { ...db.reservas[idx], ...data };
+    const idx = db.reservas.findIndex(r => Number(r.id) === id);
+    if (idx !== -1) {
+      if (method.toUpperCase() === 'DELETE') {
+        db.reservas[idx].status = 'cancelada';
+        saveStorage(db);
+        return ok({ message: 'Reserva cancelada com sucesso' });
+      }
+      if (method.toUpperCase() === 'PUT' || method.toUpperCase() === 'PATCH') {
+        db.reservas[idx] = { ...db.reservas[idx], ...(data || {}) };
         saveStorage(db);
         return ok(db.reservas[idx]);
       }
@@ -618,3 +637,4 @@ export function handleMockRequest(method, url, data) {
   // Fallback genérico para qualquer outra rota
   return ok({ message: 'Operação simulada com sucesso (Modo Demo)' });
 }
+

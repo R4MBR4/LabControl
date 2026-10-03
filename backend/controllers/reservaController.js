@@ -145,10 +145,10 @@ async function cancel(req, res) {
     }
 
     const userRole = (req.user.perfil || '').toLowerCase();
-    const isAdmin = userRole === 'admin' || userRole === 'administrador';
+    const isPrivileged = userRole === 'admin' || userRole === 'administrador' || userRole === 'docente' || userRole === 'professor';
     const isOwner = Number(reserva.usuario_id || reserva.id_usuario) === Number(req.user.id);
 
-    if (!isAdmin && !isOwner) {
+    if (!isPrivileged && !isOwner) {
       return res.status(403).json({ error: 'Você não tem permissão para cancelar esta reserva' });
     }
 

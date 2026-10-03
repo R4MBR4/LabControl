@@ -22,6 +22,7 @@ export default function Reservas() {
   const [espacos, setEspacos] = useState([]);
   const [equipamentos, setEquipamentos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [cancellingId, setCancellingId] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [tipoRecurso, setTipoRecurso] = useState('equipamento'); // 'equipamento' ou 'espaco'
 
@@ -109,12 +110,16 @@ export default function Reservas() {
   const handleCancel = async (id) => {
     if (!window.confirm('Deseja realmente cancelar esta reserva?')) return;
     try {
+      setCancellingId(id);
+      setError('');
       await api.put(`/reservas/${id}/cancelar`);
-      setSuccess('Reserva cancelada com sucesso');
-      loadData();
+      setSuccess('Reserva cancelada com sucesso!');
+      await loadData();
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
-      alert(err.response?.data?.error || 'Erro ao cancelar reserva');
+      setError(err.response?.data?.error || err.message || 'Erro ao cancelar reserva');
+    } finally {
+      setCancellingId(null);
     }
   };
 
@@ -137,10 +142,27 @@ export default function Reservas() {
         </button>
       </div>
 
+      {error && (
+        <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button onClick={() => setError('')} className="text-rose-500 hover:text-rose-700">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {success && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          <span>{success}</span>
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{success}</span>
+          </div>
+          <button onClick={() => setSuccess('')} className="text-emerald-600 hover:text-emerald-800">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -171,8 +193,10 @@ export default function Reservas() {
                 {reservas.map((r) => {
                   const resId = r.id || r.id_reserva;
                   const status = (r.status || 'confirmada').toLowerCase();
+                  const userRole = (user?.perfil || '').toLowerCase();
+                  const isPrivileged = isAdmin || userRole === 'professor' || userRole === 'docente';
                   const isOwner = Number(r.usuario_id || r.id_usuario) === Number(user?.id);
-                  const canCancel = (isOwner || isAdmin) && status !== 'cancelada';
+                  const canCancel = (isOwner || isPrivileged) && status !== 'cancelada';
 
                   return (
                     <tr key={resId} className="hover:bg-slate-50/50 transition">
@@ -212,6 +236,8 @@ export default function Reservas() {
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                           status === 'confirmada' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                           status === 'cancelada' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                          status === 'em_andamento' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                          status === 'pendente' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
                           'bg-slate-100 text-slate-600'
                         }`}>
                           {status}
@@ -219,14 +245,25 @@ export default function Reservas() {
                       </td>
 
                       <td className="px-5 py-3.5 text-right">
-                        {canCancel && (
+                        {status === 'cancelada' ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400">
+                            <XCircle className="w-3.5 h-3.5 text-slate-400" />
+                            Cancelada
+                          </span>
+                        ) : canCancel ? (
                           <button
                             onClick={() => handleCancel(resId)}
-                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-2 py-1 rounded transition"
+                            disabled={cancellingId === resId}
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 transition cursor-pointer disabled:opacity-50"
+                            title="Cancelar esta reserva"
                           >
                             <XCircle className="w-3.5 h-3.5" />
-                            Cancelar
+                            {cancellingId === resId ? 'Cancelando...' : 'Cancelar'}
                           </button>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic" title="Apenas o solicitante ou a administração podem cancelar esta reserva">
+                            Apenas solicitante
+                          </span>
                         )}
                       </td>
                     </tr>
