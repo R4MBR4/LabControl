@@ -50,23 +50,23 @@ export default function Navbar() {
 
   return (
     <nav className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-xs">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
+      <div className="w-full max-w-[1600px] mx-auto px-2 sm:px-4 lg:px-6">
+        <div className="flex justify-between items-center h-16 gap-2">
           {/* Logo & Brand */}
-          <div className="flex items-center gap-3">
-            <Link to="/dashboard" className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-xl bg-teal-600 flex items-center justify-center text-white shadow-md shadow-teal-600/20">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <Link to="/dashboard" className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-xl bg-teal-600 flex items-center justify-center text-white shadow-md shadow-teal-600/20 shrink-0">
                 <Cpu className="w-5 h-5" />
               </div>
               <div className="flex flex-col">
-                <span className="font-bold text-lg text-slate-800 tracking-tight leading-none">LabControl</span>
-                <span className="text-[10px] uppercase font-semibold tracking-wider text-teal-600">Rastreabilidade & Gestão</span>
+                <span className="font-bold text-base sm:text-lg text-slate-800 tracking-tight leading-none">LabControl</span>
+                <span className="text-[9px] uppercase font-semibold tracking-wider text-teal-600">Rastreabilidade</span>
               </div>
             </Link>
           </div>
 
           {/* Desktop Navigation */}
-          <div className="hidden lg:flex items-center gap-1">
+          <div className="hidden lg:flex items-center gap-0.5 xl:gap-1 flex-wrap justify-center flex-1 px-1">
             {navLinks.map((link) => {
               const Icon = link.icon;
               const active = isActive(link.path);
@@ -74,7 +74,7 @@ export default function Navbar() {
                 <Link
                   key={link.path}
                   to={link.path}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  className={`flex items-center gap-1 px-2 xl:px-2.5 py-1.5 rounded-lg text-[11px] xl:text-xs font-medium transition-colors whitespace-nowrap ${
                     active
                       ? 'bg-teal-50 text-teal-700 font-semibold'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -88,25 +88,26 @@ export default function Navbar() {
           </div>
 
           {/* User Profile & Actions */}
-          <div className="hidden lg:flex items-center gap-3">
-            <div className="flex items-center gap-2.5 pl-3 border-l border-slate-200">
-              <div className="flex flex-col items-end">
-                <span className="text-xs font-semibold text-slate-800">{user?.nome || 'Usuário'}</span>
-                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
-                  isAdmin ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'
-                }`}>
-                  {isAdmin ? <ShieldCheck className="w-2.5 h-2.5" /> : <UserIcon className="w-2.5 h-2.5" />}
-                  {user?.perfil || 'Usuário'}
-                </span>
-              </div>
-              <button
-                onClick={handleLogout}
-                title="Sair do sistema"
-                className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
+          <div className="hidden lg:flex items-center gap-2 pl-2 border-l border-slate-200 shrink-0">
+            <div className="flex flex-col items-end">
+              <span className="text-xs font-semibold text-slate-800 max-w-[130px] truncate" title={user?.nome}>
+                {user?.nome || 'Usuário'}
+              </span>
+              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider ${
+                isAdmin ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {isAdmin ? <ShieldCheck className="w-2.5 h-2.5" /> : <UserIcon className="w-2.5 h-2.5" />}
+                {user?.perfil || 'Usuário'}
+              </span>
             </div>
+            <button
+              onClick={handleLogout}
+              title="Encerrar sessão (Sair)"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold border border-rose-200 transition shrink-0 cursor-pointer shadow-2xs"
+            >
+              <LogOut className="w-3.5 h-3.5 text-rose-600" />
+              <span>Sair</span>
+            </button>
           </div>
 
           {/* Mobile menu button */}

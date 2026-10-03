@@ -23,6 +23,7 @@ export default function Reservas() {
   const [equipamentos, setEquipamentos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState(null);
+  const [filtroStatus, setFiltroStatus] = useState('todas'); // 'todas', 'ativas'
   const [modalOpen, setModalOpen] = useState(false);
   const [tipoRecurso, setTipoRecurso] = useState('equipamento'); // 'equipamento' ou 'espaco'
 
@@ -133,13 +134,39 @@ export default function Reservas() {
           </p>
         </div>
 
-        <button
-          onClick={handleOpenModal}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-sm transition"
-        >
-          <Plus className="w-4 h-4" />
-          Solicitar Nova Reserva
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Alternador de Filtro: Ativas / Todas */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600 border border-slate-200">
+            <button
+              onClick={() => setFiltroStatus('ativas')}
+              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                filtroStatus === 'ativas'
+                  ? 'bg-white text-teal-700 shadow-2xs font-bold'
+                  : 'hover:text-slate-900'
+              }`}
+            >
+              Ativas ({reservas.filter(r => (r.status || '').toLowerCase() !== 'cancelada').length})
+            </button>
+            <button
+              onClick={() => setFiltroStatus('todas')}
+              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                filtroStatus === 'todas'
+                  ? 'bg-white text-teal-700 shadow-2xs font-bold'
+                  : 'hover:text-slate-900'
+              }`}
+            >
+              Todas / Histórico ({reservas.length})
+            </button>
+          </div>
+
+          <button
+            onClick={handleOpenModal}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-sm transition cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Solicitar Nova Reserva
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -171,9 +198,9 @@ export default function Reservas() {
         <div className="py-12 flex justify-center">
           <div className="w-8 h-8 border-3 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
-      ) : reservas.length === 0 ? (
+      ) : reservas.filter(r => filtroStatus === 'todas' || (r.status || 'confirmada').toLowerCase() !== 'cancelada').length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-400 text-sm">
-          Nenhuma reserva registrada.
+          {filtroStatus === 'ativas' ? 'Nenhuma reserva ativa no momento (todas foram concluídas ou canceladas).' : 'Nenhuma reserva registrada.'}
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
@@ -190,7 +217,9 @@ export default function Reservas() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {reservas.map((r) => {
+                {reservas
+                  .filter(r => filtroStatus === 'todas' || (r.status || 'confirmada').toLowerCase() !== 'cancelada')
+                  .map((r) => {
                   const resId = r.id || r.id_reserva;
                   const status = (r.status || 'confirmada').toLowerCase();
                   const userRole = (user?.perfil || '').toLowerCase();
