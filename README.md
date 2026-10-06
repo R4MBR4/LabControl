@@ -119,6 +119,9 @@ LabControl/
 11. **Notificações internas:**
    A barra superior mostra a caixa pessoal de notificações, a contagem de itens não lidos e oferece leitura individual ou em lote. Novas reservas e ocorrências avisam administradores; alterações administrativas de reservas e decisões sobre ocorrências avisam o solicitante. Aplicar `database/migrations/10_notificacoes_internas.sql` em bases existentes.
 
+12. **PWA (cache do aplicativo):**
+   A aplicação pode ser instalada em navegadores compatíveis e mantém o shell frontend disponível após um primeiro carregamento online, usando o manifesto e o service worker em `frontend/public/`. As chamadas à API não são armazenadas em cache; operações offline e sincronização serão tratadas na Fase 15.
+
 ---
 
 ## 🚀 Como Executar o Projeto
