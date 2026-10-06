@@ -15,7 +15,8 @@
     "test:calendario-reservas": "node teste-calendario-reservas.js",
     "test:relatorios": "node teste-relatorios.js",
     "test:notificacoes": "node teste-notificacoes-internas.js",
-    "test:dados-tecnicos": "node teste-dados-tecnicos.js"
+    "test:dados-tecnicos": "node teste-dados-tecnicos.js",
+    "test:seguranca-auth": "node teste-seguranca-autenticacao.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

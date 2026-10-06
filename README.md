@@ -150,9 +150,11 @@ DB_USER=root
 DB_PASSWORD=sua_senha_do_mysql
 DB_NAME=labcontrol
 DB_PORT=3306
-JWT_SECRET=labcontrol_secret_token_academico_2026
+# Gere um segredo exclusivo com: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+JWT_SECRET=COLE_AQUI_UM_SEGREDO_ALEATORIO_DE_PELO_MENOS_32_BYTES
 PORT=3001
 ```
+O servidor recusa iniciar se `JWT_SECRET` estiver ausente, for menor que 32 bytes ou ainda usar o segredo público histórico. O modo demo permanece disponível pelo mock do frontend; o backend nunca emite tokens demo.
 
 ### 3. Iniciar o Back-end
 Abra um terminal na pasta `backend/`:

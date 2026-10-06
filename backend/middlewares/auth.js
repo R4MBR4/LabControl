@@ -1,6 +1,13 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'labcontrol_secret_token_academico_2026';
+const JWT_SECRET = process.env.JWT_SECRET;
+const LEGACY_INSECURE_SECRET = 'labcontrol_secret_token_academico_2026';
+
+if (!JWT_SECRET || Buffer.byteLength(JWT_SECRET, 'utf8') < 32 || JWT_SECRET === LEGACY_INSECURE_SECRET) {
+  throw new Error(
+    'JWT_SECRET deve ser configurado com pelo menos 32 bytes e não pode usar o segredo padrão público. Gere um valor aleatório seguro.'
+  );
+}
 
 function generateToken(user) {
   const payload = {

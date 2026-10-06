@@ -34,23 +34,7 @@ async function login(req, res) {
     });
   } catch (err) {
     console.error('[Auth] Erro no login:', err.message);
-    if (err.code === 'ECONNREFUSED' || err.code === 'ER_BAD_DB_ERROR' || err.code === 'PROTOCOL_CONNECTION_LOST' || !err.code) {
-      const userEmail = (req.body && req.body.email) || 'admin@labcontrol.com';
-      const isAdm = userEmail.toLowerCase().includes('admin');
-      const safeUser = {
-        id: 1,
-        nome: isAdm ? 'Administrador do Lab' : 'Aluno Pesquisador',
-        email: userEmail,
-        perfil: isAdm ? 'administrador' : 'usuario'
-      };
-      const token = generateToken(safeUser);
-      return res.json({
-        message: 'Conectado em Modo Visualização (MySQL ainda não iniciado no XAMPP)',
-        token,
-        usuario: safeUser
-      });
-    }
-    res.status(500).json({ error: 'Erro interno ao realizar login: ' + err.message });
+    res.status(500).json({ error: 'Não foi possível autenticar no momento. Tente novamente.' });
   }
 }
 
