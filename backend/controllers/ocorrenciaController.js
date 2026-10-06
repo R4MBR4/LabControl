@@ -38,7 +38,7 @@ async function getById(req, res) {
 
 async function create(req, res) {
   try {
-    const { equipamento_id, utilizacao_id, titulo, descricao, gravidade } = req.body;
+    const { equipamento_id, utilizacao_id, espaco_id, titulo, descricao, gravidade, foto_evidencia, foto_metadata } = req.body;
     const usuario_id = req.user.id;
 
     if (!titulo || !descricao) {
@@ -48,11 +48,14 @@ async function create(req, res) {
     const payload = {
       usuario_id,
       equipamento_id: equipamento_id || null,
+      espaco_id: espaco_id || null,
       utilizacao_id: utilizacao_id || null,
       titulo,
       descricao,
       gravidade: gravidade || 'media',
-      status: 'aberta'
+      status: 'aberta',
+      foto_evidencia: foto_evidencia || null,
+      foto_metadata: foto_metadata ? (typeof foto_metadata === 'object' ? JSON.stringify(foto_metadata) : String(foto_metadata)) : null
     };
 
     const nova = await ocorrenciaModel.createOcorrencia(payload);
@@ -82,7 +85,9 @@ async function decidir(req, res) {
     const updatePayload = {
       status,
       decisao_admin: decisao_admin || '',
-      resposta_admin: decisao_admin || ''
+      resposta_admin: decisao_admin || '',
+      data_decisao: new Date(),
+      data_resolucao: status === 'resolvida' ? new Date() : null
     };
 
     const updated = await ocorrenciaModel.updateOcorrencia(req.params.id, updatePayload);

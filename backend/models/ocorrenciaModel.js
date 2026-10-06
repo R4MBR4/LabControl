@@ -13,10 +13,13 @@ async function getAllOcorrencias(filters = {}) {
   let sql = `
     SELECT o.*,
            u.nome AS usuario_nome, u.email AS usuario_email,
-           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo
+           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo,
+           e.codigo_labcontrol AS equipamento_labcontrol, e.patrimonio_ufpi AS equipamento_patrimonio_ufpi,
+           esp.nome AS espaco_nome
     FROM \`${TABLE}\` o
     LEFT JOIN \`usuario\` u ON o.\`${fkUser}\` = u.\`${userPk}\`
     LEFT JOIN \`equipamento\` e ON o.\`${fkEquip}\` = e.\`${equipPk}\`
+    LEFT JOIN \`espaco\` esp ON o.espaco_id = esp.id
   `;
 
   const whereClauses = [];
@@ -56,10 +59,13 @@ async function getOcorrenciaById(id) {
   const sql = `
     SELECT o.*,
            u.nome AS usuario_nome, u.email AS usuario_email,
-           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo
+           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo,
+           e.codigo_labcontrol AS equipamento_labcontrol, e.patrimonio_ufpi AS equipamento_patrimonio_ufpi,
+           esp.nome AS espaco_nome
     FROM \`${TABLE}\` o
     LEFT JOIN \`usuario\` u ON o.\`${fkUser}\` = u.\`${userPk}\`
     LEFT JOIN \`equipamento\` e ON o.\`${fkEquip}\` = e.\`${equipPk}\`
+    LEFT JOIN \`espaco\` esp ON o.espaco_id = esp.id
     WHERE o.\`${pk}\` = ?
     LIMIT 1
   `;

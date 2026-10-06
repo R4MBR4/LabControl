@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import QRScanner from '../components/QRScanner';
+import CameraEvidenceCapture from '../components/CameraEvidenceCapture';
 import {
   QrCode,
   LogIn,
@@ -12,7 +13,8 @@ import {
   AlertTriangle,
   User,
   Clock,
-  ShieldAlert
+  ShieldAlert,
+  Camera
 } from 'lucide-react';
 
 export default function CheckinCheckout() {
@@ -33,6 +35,8 @@ export default function CheckinCheckout() {
   const [houveAvaria, setHouveAvaria] = useState(false);
   const [relatoAvaria, setRelatoAvaria] = useState('');
   const [checkoutObs, setCheckoutObs] = useState('');
+  const [checkoutFoto, setCheckoutFoto] = useState(null);
+  const [checkoutFotoMeta, setCheckoutFotoMeta] = useState(null);
 
   const [message, setMessage] = useState(null);
   const [error, setError] = useState('');
@@ -145,18 +149,26 @@ export default function CheckinCheckout() {
       return;
     }
 
+    // Regra da especificação: Se houver avaria, a evidência por câmera é obrigatória
+    if (houveAvaria && !checkoutFoto) {
+      setError('Atenção: Para registrar avaria na devolução, é obrigatório capturar uma fotografia probatória via câmera ao vivo.');
+      return;
+    }
+
     try {
       const res = await api.post('/utilizacoes/checkout', {
         utilizacao_id: checkoutUtilizacaoId,
         condicao_devolucao: condicaoDevolucao,
         houve_avaria: houveAvaria,
         relato_avaria: relatoAvaria,
-        observacoes: checkoutObs
+        observacoes: checkoutObs,
+        foto_evidencia: checkoutFoto,
+        foto_metadata: checkoutFotoMeta
       });
 
       let successMsg = 'Check-out concluído com sucesso! Equipamento retornado ao status disponível.';
       if (res.data.avaria_registrada) {
-        successMsg = 'Check-out concluído. Avaria registrada e equipamento bloqueado para manutenção preventiva/corretiva!';
+        successMsg = 'Check-out concluído. Avaria e evidência fotográfica registradas! Equipamento bloqueado para manutenção.';
       }
 
       setMessage({
@@ -168,6 +180,8 @@ export default function CheckinCheckout() {
       setHouveAvaria(false);
       setRelatoAvaria('');
       setCheckoutObs('');
+      setCheckoutFoto(null);
+      setCheckoutFotoMeta(null);
       loadData();
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao realizar check-out');
@@ -379,6 +393,31 @@ export default function CheckinCheckout() {
                 ></textarea>
               </div>
             )}
+
+            {/* Evidência Fotográfica Probatória via Câmera (Sem Galeria) */}
+            <div className="pt-3 border-t border-slate-100">
+              <CameraEvidenceCapture
+                label={houveAvaria ? "Evidência Fotográfica da Avaria (Câmera Obrigatória)" : "Registro Fotográfico do Equipamento (Opcional - Câmera)"}
+                initialPhoto={checkoutFoto}
+                required={houveAvaria}
+                contextInfo={{
+                  user,
+                  equipamento: (() => {
+                    const selU = utilizacoesAtivas.find(u => String(u.id || u.id_utilizacao) === String(checkoutUtilizacaoId));
+                    return selU ? equipamentos.find(e => String(e.id || e.id_equipamento) === String(selU.equipamento_id || selU.id_equipamento)) : null;
+                  })(),
+                  tipoContexto: houveAvaria ? 'Avaria Detectada no Check-out' : 'Check-out Regular'
+                }}
+                onCapture={(dataUrl, meta) => {
+                  setCheckoutFoto(dataUrl);
+                  setCheckoutFotoMeta(meta);
+                }}
+                onClear={() => {
+                  setCheckoutFoto(null);
+                  setCheckoutFotoMeta(null);
+                }}
+              />
+            </div>
 
             <button
               type="submit"

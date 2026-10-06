@@ -115,7 +115,7 @@ async function checkin(req, res) {
  */
 async function checkout(req, res) {
   try {
-    const { utilizacao_id, equipamento_id, condicao_devolucao, observacoes, houve_avaria, relato_avaria } = req.body;
+    const { utilizacao_id, equipamento_id, condicao_devolucao, observacoes, houve_avaria, relato_avaria, foto_evidencia, foto_metadata } = req.body;
     const usuario_id = req.user.id;
 
     // Regra Crítica: Condição de devolução é OBRIGATÓRIA
@@ -140,16 +140,6 @@ async function checkout(req, res) {
 
     const targetEquipId = utilizacao.equipamento_id || utilizacao.id_equipamento;
 
-    // Conclui a utilização
-    const checkoutData = {
-      condicao_devolucao: condicao_devolucao.trim(),
-      condicao_final: condicao_devolucao.trim(),
-      data_checkout: new Date(),
-      status: 'finalizado'
-    };
-
-    const utilizacaoAtualizada = await utilizacaoModel.executeCheckout(utilizacao.id || utilizacao.id_utilizacao, checkoutData);
-
     // Avalia se o equipamento foi devolvido danificado
     const condicaoLower = condicao_devolucao.toLowerCase();
     const isDanificado = houve_avaria || 
@@ -158,8 +148,22 @@ async function checkout(req, res) {
       condicaoLower.includes('avariado') || 
       condicaoLower.includes('quebrado');
 
+    // Conclui a utilização
+    const checkoutData = {
+      condicao_devolucao: condicao_devolucao.trim(),
+      condicao_final: condicao_devolucao.trim(),
+      data_checkout: new Date(),
+      status: 'finalizado',
+      foto_evidencia: foto_evidencia || null,
+      foto_metadata: foto_metadata ? (typeof foto_metadata === 'object' ? JSON.stringify(foto_metadata) : String(foto_metadata)) : null,
+      houve_avaria: isDanificado ? 1 : 0,
+      relato_avaria: relato_avaria || null
+    };
+
+    const utilizacaoAtualizada = await utilizacaoModel.executeCheckout(utilizacao.id || utilizacao.id_utilizacao, checkoutData);
+
     if (isDanificado) {
-      // Registra ocorrência automática vinculada à utilização
+      // Registra ocorrência automática vinculada à utilização e com a foto da evidência
       try {
         await ocorrenciaModel.createOcorrencia({
           utilizacao_id: utilizacao.id || utilizacao.id_utilizacao,
@@ -168,7 +172,9 @@ async function checkout(req, res) {
           titulo: `Avaria detectada no Check-out do equipamento #${targetEquipId}`,
           descricao: relato_avaria || `Equipamento devolvido em condição: ${condicao_devolucao}. ${observacoes || ''}`,
           gravidade: 'alta',
-          status: 'aberta'
+          status: 'aberta',
+          foto_evidencia: foto_evidencia || null,
+          foto_metadata: foto_metadata ? (typeof foto_metadata === 'object' ? JSON.stringify(foto_metadata) : String(foto_metadata)) : null
         });
       } catch (errOcorrencia) {
         console.warn('[Checkout] Aviso ao vincular ocorrência:', errOcorrencia.message);

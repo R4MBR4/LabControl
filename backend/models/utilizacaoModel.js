@@ -14,7 +14,8 @@ async function getAllUtilizacoes(filters = {}) {
   let sql = `
     SELECT u.*,
            us.nome AS usuario_nome, us.email AS usuario_email,
-           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo
+           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo,
+           e.codigo_labcontrol AS equipamento_labcontrol, e.patrimonio_ufpi AS equipamento_patrimonio_ufpi
     FROM \`${TABLE}\` u
     LEFT JOIN \`usuario\` us ON u.\`${fkUser}\` = us.\`${userPk}\`
     LEFT JOIN \`equipamento\` e ON u.\`${fkEquip}\` = e.\`${equipPk}\`
@@ -57,7 +58,8 @@ async function getUtilizacaoById(id) {
   const sql = `
     SELECT u.*,
            us.nome AS usuario_nome, us.email AS usuario_email,
-           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo
+           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo,
+           e.codigo_labcontrol AS equipamento_labcontrol, e.patrimonio_ufpi AS equipamento_patrimonio_ufpi
     FROM \`${TABLE}\` u
     LEFT JOIN \`usuario\` us ON u.\`${fkUser}\` = us.\`${userPk}\`
     LEFT JOIN \`equipamento\` e ON u.\`${fkEquip}\` = e.\`${equipPk}\`

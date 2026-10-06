@@ -505,10 +505,38 @@ export function handleMockRequest(method, url, data) {
     if (ut) {
       ut.data_fim = new Date().toISOString();
       ut.status = 'CONCLUIDA';
+      ut.condicao_devolucao = data.condicao_devolucao;
+      ut.foto_evidencia = data.foto_evidencia || null;
+      ut.foto_metadata = data.foto_metadata || null;
+      ut.houve_avaria = data.houve_avaria ? 1 : 0;
+      ut.relato_avaria = data.relato_avaria || null;
+
       const eq = db.equipamentos.find(e => e.id === ut.equipamento_id);
-      if (eq) eq.status = 'DISPONIVEL';
+      if (data.houve_avaria) {
+        if (eq) eq.status = 'manutencao';
+        // Auto-create occurrence in mock
+        const storedUser = localStorage.getItem('labcontrol_user');
+        const u = storedUser ? JSON.parse(storedUser) : db.usuarios[0];
+        db.ocorrencias.unshift({
+          id: Date.now(),
+          equipamento_id: ut.equipamento_id,
+          equipamento_nome: eq ? eq.nome : null,
+          usuario_nome: u.nome,
+          titulo: `Avaria detectada no Check-out #${ut.equipamento_id}`,
+          descricao: data.relato_avaria || `Devolução em condição: ${data.condicao_devolucao}`,
+          gravidade: 'alta',
+          prioridade: 'ALTA',
+          tipo: 'DEFEITO',
+          status: 'ABERTA',
+          foto_evidencia: data.foto_evidencia || null,
+          foto_metadata: data.foto_metadata || null,
+          data_criacao: new Date().toISOString()
+        });
+      } else {
+        if (eq) eq.status = 'disponivel';
+      }
       saveStorage(db);
-      return ok(ut);
+      return ok({ message: 'Check-out finalizado', utilizacao: ut, avaria_registrada: !!data.houve_avaria });
     }
     return ok({ message: 'Check-out finalizado' });
   }
@@ -528,11 +556,16 @@ export function handleMockRequest(method, url, data) {
         espaco_id: data.espaco_id || null,
         espaco_nome: esp ? esp.nome : null,
         usuario_nome: u.nome,
+        titulo: data.titulo || 'Ocorrência Operacional',
         tipo: data.tipo || 'DEFEITO',
         prioridade: data.prioridade || 'MEDIA',
+        gravidade: data.gravidade || 'media',
         descricao: data.descricao || '',
+        foto_evidencia: data.foto_evidencia || null,
+        foto_metadata: data.foto_metadata || null,
         status: 'ABERTA',
-        data_criacao: new Date().toISOString()
+        data_criacao: new Date().toISOString(),
+        data_registro: new Date().toISOString()
       };
       db.ocorrencias.unshift(nova);
       saveStorage(db);
