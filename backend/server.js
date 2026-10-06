@@ -24,6 +24,7 @@ const inventarioRoutes = require('./routes/inventarioRoutes');
 const integracaoRoutes = require('./routes/integracaoRoutes');
 const buscaRoutes = require('./routes/buscaRoutes');
 const notificacaoRoutes = require('./routes/notificacaoRoutes');
+const { startNoShowScheduler } = require('./services/noShowScheduler');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -87,4 +88,5 @@ app.listen(PORT, async () => {
   console.log(`  Ambiente: ${process.env.NODE_ENV || 'production'}`);
   console.log(`====================================================`);
   await testConnection();
+  startNoShowScheduler();
 });

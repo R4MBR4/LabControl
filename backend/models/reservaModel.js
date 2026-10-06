@@ -422,30 +422,38 @@ async function verificarNoShowsAutomaticos(toleranciaMin = 15, executor = pool) 
     throw new Error('A tolerância para no-show deve estar entre 1 e 180 minutos.');
   }
 
-  // Busca reservas confirmadas cujo início + tolerância já passou, e que não possuem utilização iniciada
+  // Lock eligible reservations so concurrent sweeps cannot audit the same no-show.
   const [candidatos] = await executor.query(`
     SELECT r.id, r.usuario_id, r.data_inicio, r.finalidade
     FROM \`${TABLE}\` r
-    WHERE r.status IN ('confirmada', 'pendente')
+    WHERE r.status = 'confirmada'
       AND (r.no_show = 0 OR r.no_show IS NULL)
       AND r.data_inicio < DATE_SUB(NOW(), INTERVAL ? MINUTE)
       AND NOT EXISTS (
         SELECT 1 FROM utilizacao u WHERE u.reserva_id = r.id
       )
+    FOR UPDATE
   `, [toleranciaMin]);
 
-  if (candidatos.length > 0) {
-    const ids = candidatos.map(c => c.id);
-    await executor.query(`
+  const reservas = [];
+  for (const candidato of candidatos) {
+    const [resultado] = await executor.query(`
       UPDATE \`${TABLE}\`
       SET no_show = 1, no_show_at = NOW(), status = 'no_show'
-      WHERE id IN (?)
-    `, [ids]);
+      WHERE id = ?
+        AND status = 'confirmada'
+        AND (no_show = 0 OR no_show IS NULL)
+        AND data_inicio < DATE_SUB(NOW(), INTERVAL ? MINUTE)
+        AND NOT EXISTS (
+          SELECT 1 FROM utilizacao u WHERE u.reserva_id = \`${TABLE}\`.id
+        )
+    `, [candidato.id, toleranciaConfigurada]);
+    if (resultado.affectedRows === 1) reservas.push(candidato);
   }
 
   return {
-    totalMarcados: candidatos.length,
-    reservas: candidatos
+    totalMarcados: reservas.length,
+    reservas
   };
 }
 

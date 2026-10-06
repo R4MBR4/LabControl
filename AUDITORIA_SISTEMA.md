@@ -147,7 +147,7 @@ LabControl/
 
 ## 5. Estado após os blocos de reservas, dashboard, ocorrências/manutenção, auditoria, CSV e UX
 
-* **Tolerância de no-show:** Configuração administrativa persistida em `configuracao_sistema`; aplicar `database/migrations/07_configuracao_no_show.sql` em bancos existentes.
+* **No-show:** tolerância administrativa persistida em `configuracao_sistema`; aplicação automática pelo backend no início e a cada 60 segundos (ajustável por `NO_SHOW_CHECK_INTERVAL_MS`). Somente reservas confirmadas, vencidas além da tolerância e sem utilização vinculada são marcadas. Marcação e auditoria são transacionais e não aplicam punição; a verificação manual permanece disponível. Aplicar `database/migrations/07_configuracao_no_show.sql` em bancos existentes.
 * **Dashboard administrativo:** KPIs de equipamentos, espaços, reservas, ocorrências, manutenção e estoque; utilização atual; alertas operacionais e gráficos compactos. Erros da consulta são reportados, sem valores demonstrativos substituindo métricas reais.
 * **Ocorrências e manutenção:** Check-out com avaria é transacional e exige evidência; encaminhamento cria ordem vinculada; laudo é obrigatório para concluir; o equipamento só é liberado sem outras ordens abertas e sem inativação; API preserva ocorrências e ordens sem exclusão física. Aplicar também `database/migrations/08_vinculo_ocorrencia_manutencao.sql` em bancos existentes.
 * **Histórico e auditoria:** `auditoria_evento` registra autor, data/hora, ação e detalhes de alterações em equipamentos, inventário, reservas, utilizações, ocorrências e manutenção. Detalhes do equipamento combina a linha do tempo auditável com os registros operacionais legados; aplicar `database/migrations/09_historico_auditoria.sql` em bancos existentes.

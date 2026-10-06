@@ -86,6 +86,7 @@ LabControl/
 
 1. **Prevenção de Conflito de Horário:**
    O sistema impede matematicamente (`data_inicio < nova_fim AND data_fim > nova_inicio`) o agendamento simultâneo para o mesmo espaço ou equipamento.
+   Reservas confirmadas sem utilização são verificadas automaticamente pelo backend no início e a cada 60 segundos, respeitando a tolerância administrativa. O intervalo pode ser ajustado por `NO_SHOW_CHECK_INTERVAL_MS` (mínimo de 1000 ms); a verificação manual continua disponível e nenhuma punição é aplicada automaticamente.
 
 2. **Equipamento em Manutenção Bloqueado:**
    Equipamentos em manutenção não podem ser reservados nem receber check-in.
