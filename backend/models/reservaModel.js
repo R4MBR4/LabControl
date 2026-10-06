@@ -163,7 +163,14 @@ async function getReservaById(id, executor = pool) {
  * Verifica se já existe reserva ativa/confirmada sobrepondo as datas fornecidas
  * para o mesmo equipamento ou espaço.
  */
-async function checkConflict({ equipamento_id, espaco_id, data_inicio, data_fim, excludeId = null }) {
+async function checkConflict({
+  equipamento_id,
+  espaco_id,
+  data_inicio,
+  data_fim,
+  excludeId = null,
+  executor = pool
+}) {
   const pk = await getPrimaryKey(TABLE);
   const fkEquip = await resolveColumn(TABLE, ['equipamento_id', 'id_equipamento']);
   const fkEspaco = await resolveColumn(TABLE, ['espaco_id', 'id_espaco']);
@@ -200,6 +207,7 @@ async function checkConflict({ equipamento_id, espaco_id, data_inicio, data_fim,
 
   const sql = `
     SELECT r.*,
+           DATE_FORMAT(r.\`${colFim}\`, '%Y-%m-%dT%H:%i:%s') AS conflito_fim_local,
            u.nome AS usuario_nome,
            e.nome AS equipamento_nome,
            s.nome AS espaco_nome
@@ -209,8 +217,151 @@ async function checkConflict({ equipamento_id, espaco_id, data_inicio, data_fim,
     LEFT JOIN espaco s ON r.espaco_id = s.id
     WHERE ${conditions.join(' AND ')}
   `;
-  const [rows] = await pool.query(sql, params);
+  const [rows] = await executor.query(sql, params);
   return rows;
+}
+
+function parseLocalDateTime(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return null;
+  return Date.UTC(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Number(match[4]),
+    Number(match[5]),
+    Number(match[6] || 0)
+  );
+}
+
+function formatLocalDateTime(timestamp) {
+  const date = new Date(timestamp);
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+}
+
+async function getConflictSuggestions({
+  equipamento_id,
+  espaco_id,
+  data_inicio,
+  data_fim,
+  usuario_id,
+  executor = pool
+}) {
+  const requestedStart = parseLocalDateTime(data_inicio);
+  const requestedEnd = parseLocalDateTime(data_fim);
+  if (requestedStart === null || requestedEnd === null || requestedEnd <= requestedStart) {
+    return { proximos_horarios: [], espacos: [], equipamentos: [] };
+  }
+
+  const durationMs = requestedEnd - requestedStart;
+  const durationMinutes = Math.ceil(durationMs / 60_000);
+  const now = new Date();
+  let start = Math.max(requestedStart, Date.UTC(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    now.getHours(),
+    now.getMinutes()
+  ));
+  const proximos_horarios = [];
+
+  for (let attempt = 0; attempt < 30 && proximos_horarios.length < 3; attempt += 1) {
+    const slotStart = formatLocalDateTime(start);
+    const slotEnd = formatLocalDateTime(start + durationMs);
+    const conflicts = await checkConflict({
+      equipamento_id: equipamento_id || null,
+      espaco_id: espaco_id || null,
+      data_inicio: slotStart,
+      data_fim: slotEnd,
+      executor
+    });
+    if (conflicts.length === 0) {
+      proximos_horarios.push({
+        data_inicio: slotStart,
+        data_fim: slotEnd,
+        duracao_minutos: durationMinutes
+      });
+      start += durationMs;
+      continue;
+    }
+
+    const conflictEnds = conflicts
+      .map((conflict) => parseLocalDateTime(conflict.conflito_fim_local))
+      .filter((value) => value !== null);
+    const nextStart = conflictEnds.length ? Math.max(...conflictEnds) : start + durationMs;
+    start = nextStart > start ? nextStart : start + durationMs;
+  }
+
+  const espacos = [];
+  const equipamentos = [];
+  if (espaco_id && !equipamento_id) {
+    const [candidatos] = await executor.query(`
+      SELECT id, nome, localizacao
+      FROM espaco
+      WHERE id <> ?
+        AND LOWER(COALESCE(status, 'disponivel')) NOT IN ('manutencao', 'em_manutencao', 'inativo', 'indisponivel')
+      ORDER BY nome
+      LIMIT 20
+    `, [espaco_id]);
+
+    for (const candidato of candidatos) {
+      const conflitos = await checkConflict({
+        espaco_id: candidato.id,
+        data_inicio: formatLocalDateTime(requestedStart),
+        data_fim: formatLocalDateTime(requestedEnd),
+        executor
+      });
+      if (!conflitos.length) espacos.push(candidato);
+      if (espacos.length === 3) break;
+    }
+  }
+
+  if (equipamento_id) {
+    const [selecionadoRows] = await executor.query(`
+      SELECT categoria, exige_capacitacao
+      FROM equipamento
+      WHERE id = ?
+      LIMIT 1
+    `, [equipamento_id]);
+    const categoria = selecionadoRows[0]?.categoria;
+
+    if (categoria) {
+      const [candidatos] = await executor.query(`
+        SELECT e.id, e.nome, e.categoria, e.espaco_id, e.exige_capacitacao,
+               e.codigo_patrimonio, esp.nome AS espaco_nome
+        FROM equipamento e
+        LEFT JOIN espaco esp ON esp.id = e.espaco_id
+        WHERE e.id <> ?
+          AND LOWER(e.categoria) = LOWER(?)
+          AND LOWER(COALESCE(e.status, 'disponivel')) = 'disponivel'
+          AND (e.inativo = 0 OR e.inativo IS NULL)
+        ORDER BY e.nome
+        LIMIT 20
+      `, [equipamento_id, categoria]);
+
+      for (const candidato of candidatos) {
+        if (candidato.exige_capacitacao && usuario_id) {
+          const capacitacaoModel = require('./capacitacaoModel');
+          const autorizado = await capacitacaoModel.checkUserCapacitacao(usuario_id, candidato.id);
+          if (!autorizado) continue;
+        }
+        const conflitos = await checkConflict({
+          equipamento_id: candidato.id,
+          espaco_id: candidato.espaco_id,
+          data_inicio: formatLocalDateTime(requestedStart),
+          data_fim: formatLocalDateTime(requestedEnd),
+          executor
+        });
+        if (!conflitos.length) {
+          equipamentos.push(candidato);
+          if (equipamentos.length === 3) break;
+        }
+      }
+    }
+  }
+
+  return { proximos_horarios, espacos, equipamentos };
 }
 
 /**
@@ -464,6 +615,7 @@ module.exports = {
   getAllReservas,
   getReservaById,
   checkConflict,
+  getConflictSuggestions,
   getReservasCalendario,
   createReserva,
   updateReserva,

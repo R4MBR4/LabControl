@@ -8,7 +8,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test:inventario-divergencia": "node teste-inventario-divergencia.js",
-    "test:no-show-automatic": "node teste-no-show-automatic.js"
+    "test:no-show-automatic": "node teste-no-show-automatic.js",
+    "test:sugestoes-reserva": "node teste-sugestoes-reserva.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

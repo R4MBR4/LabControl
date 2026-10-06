@@ -84,6 +84,13 @@ export default function Reservas() {
 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [conflictSuggestions, setConflictSuggestions] = useState(null);
+
+  const updateFormData = (changes) => {
+    setFormData((current) => ({ ...current, ...changes }));
+    setConflictSuggestions(null);
+    setError('');
+  };
 
   const loadData = async () => {
     try {
@@ -182,6 +189,7 @@ export default function Reservas() {
       observacoes: ''
     });
     setError('');
+    setConflictSuggestions(null);
     setModalOpen(true);
   };
 
@@ -197,6 +205,7 @@ export default function Reservas() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setConflictSuggestions(null);
 
     try {
       if (isRecorrente) {
@@ -236,7 +245,28 @@ export default function Reservas() {
       setTimeout(() => setSuccess(''), 5000);
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao realizar reserva');
+      setConflictSuggestions(err.response?.status === 409 ? err.response.data?.sugestoes || null : null);
     }
+  };
+
+  const applyTimeSuggestion = (suggestion) => {
+    updateFormData({
+      data_inicio: suggestion.data_inicio.slice(0, 16),
+      data_fim: suggestion.data_fim.slice(0, 16)
+    });
+    setError('');
+  };
+
+  const applySpaceSuggestion = (spaceId) => {
+    setTipoRecurso('espaco');
+    updateFormData({ espaco_id: String(spaceId), equipamento_id: '' });
+    setError('');
+  };
+
+  const applyEquipmentSuggestion = (equipmentId) => {
+    setTipoRecurso('equipamento');
+    updateFormData({ equipamento_id: String(equipmentId), espaco_id: '' });
+    setError('');
   };
 
   const handleInitiateCancel = (r) => {
@@ -1188,6 +1218,70 @@ export default function Reservas() {
               </div>
             )}
 
+            {!isRecorrente && conflictSuggestions && (
+              <div className="mb-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs">
+                <h4 className="font-bold text-amber-900">Alternativas disponíveis</h4>
+                {conflictSuggestions.proximos_horarios?.length > 0 && (
+                  <div>
+                    <p className="mb-1 font-semibold text-slate-700">Próximos horários livres para o recurso selecionado</p>
+                    <div className="flex flex-wrap gap-2">
+                      {conflictSuggestions.proximos_horarios.map((slot) => (
+                        <button
+                          key={`${slot.data_inicio}-${slot.data_fim}`}
+                          type="button"
+                          onClick={() => applyTimeSuggestion(slot)}
+                          className="rounded-lg border border-teal-200 bg-white px-2.5 py-1.5 text-left text-teal-800 hover:bg-teal-50"
+                        >
+                          {new Date(slot.data_inicio).toLocaleString('pt-BR')} – {new Date(slot.data_fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {conflictSuggestions.espacos?.length > 0 && (
+                  <div>
+                    <p className="mb-1 font-semibold text-slate-700">Outros espaços livres no mesmo horário</p>
+                    <div className="flex flex-wrap gap-2">
+                      {conflictSuggestions.espacos.map((space) => (
+                        <button
+                          key={space.id}
+                          type="button"
+                          onClick={() => applySpaceSuggestion(space.id)}
+                          className="rounded-lg border border-teal-200 bg-white px-2.5 py-1.5 text-teal-800 hover:bg-teal-50"
+                        >
+                          {space.nome}{space.localizacao ? ` · ${space.localizacao}` : ''}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {conflictSuggestions.equipamentos?.length > 0 && (
+                  <div>
+                    <p className="mb-1 font-semibold text-slate-700">Equipamentos equivalentes livres no mesmo horário</p>
+                    <div className="flex flex-wrap gap-2">
+                      {conflictSuggestions.equipamentos.map((equipment) => (
+                        <button
+                          key={equipment.id}
+                          type="button"
+                          onClick={() => applyEquipmentSuggestion(equipment.id)}
+                          className="rounded-lg border border-teal-200 bg-white px-2.5 py-1.5 text-left text-teal-800 hover:bg-teal-50"
+                        >
+                          {equipment.nome}{equipment.espaco_nome ? ` · ${equipment.espaco_nome}` : ''}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!conflictSuggestions.proximos_horarios?.length
+                  && !conflictSuggestions.espacos?.length
+                  && !conflictSuggestions.equipamentos?.length
+                  && <p className="text-slate-600">Não encontramos alternativas livres para esse período. Seus dados permanecem preenchidos.</p>}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Tipo de Recurso */}
               <div>
@@ -1195,7 +1289,7 @@ export default function Reservas() {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setTipoRecurso('equipamento')}
+                    onClick={() => { setTipoRecurso('equipamento'); setConflictSuggestions(null); }}
                     className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
                       tipoRecurso === 'equipamento'
                         ? 'bg-teal-50 border-teal-500 text-teal-700'
@@ -1207,7 +1301,7 @@ export default function Reservas() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTipoRecurso('espaco')}
+                    onClick={() => { setTipoRecurso('espaco'); setConflictSuggestions(null); }}
                     className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
                       tipoRecurso === 'espaco'
                         ? 'bg-teal-50 border-teal-500 text-teal-700'
@@ -1226,7 +1320,7 @@ export default function Reservas() {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Selecione o Equipamento</label>
                   <select
                     value={formData.equipamento_id}
-                    onChange={(e) => setFormData({ ...formData, equipamento_id: e.target.value })}
+                    onChange={(e) => updateFormData({ equipamento_id: e.target.value })}
                     required
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white"
                   >
@@ -1246,7 +1340,7 @@ export default function Reservas() {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Selecione o Espaço / Sala</label>
                   <select
                     value={formData.espaco_id}
-                    onChange={(e) => setFormData({ ...formData, espaco_id: e.target.value })}
+                    onChange={(e) => updateFormData({ espaco_id: e.target.value })}
                     required
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white"
                   >
@@ -1268,7 +1362,11 @@ export default function Reservas() {
                   <input
                     type="checkbox"
                     checked={isRecorrente}
-                    onChange={(e) => setIsRecorrente(e.target.checked)}
+                    onChange={(e) => {
+                      setIsRecorrente(e.target.checked);
+                      setConflictSuggestions(null);
+                      setError('');
+                    }}
                     className="w-4 h-4 text-teal-600 rounded border-slate-300 focus:ring-teal-500"
                   />
                   <div className="flex items-center gap-1.5">
@@ -1318,7 +1416,7 @@ export default function Reservas() {
                           type="date"
                           required
                           value={formData.data_inicio.slice(0, 10)}
-                          onChange={(e) => setFormData({ ...formData, data_inicio: `${e.target.value}T${horaInicio}` })}
+                          onChange={(e) => updateFormData({ data_inicio: `${e.target.value}T${horaInicio}` })}
                           className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 bg-white"
                         />
                       </div>
@@ -1373,7 +1471,7 @@ export default function Reservas() {
                       type="datetime-local"
                       required
                       value={formData.data_inicio}
-                      onChange={(e) => setFormData({ ...formData, data_inicio: e.target.value })}
+                      onChange={(e) => updateFormData({ data_inicio: e.target.value })}
                       className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white"
                     />
                   </div>
@@ -1383,7 +1481,7 @@ export default function Reservas() {
                       type="datetime-local"
                       required
                       value={formData.data_fim}
-                      onChange={(e) => setFormData({ ...formData, data_fim: e.target.value })}
+                      onChange={(e) => updateFormData({ data_fim: e.target.value })}
                       className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white"
                     />
                   </div>
@@ -1396,7 +1494,7 @@ export default function Reservas() {
                   type="text"
                   required
                   value={formData.finalidade}
-                  onChange={(e) => setFormData({ ...formData, finalidade: e.target.value })}
+                  onChange={(e) => updateFormData({ finalidade: e.target.value })}
                   placeholder="Ex: TCC - Fabricação mecânica e testes em bancada"
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 />
@@ -1407,7 +1505,7 @@ export default function Reservas() {
                 <textarea
                   rows="2"
                   value={formData.observacoes}
-                  onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
+                  onChange={(e) => updateFormData({ observacoes: e.target.value })}
                   placeholder="Materiais que serão levados ou observações de segurança..."
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 ></textarea>

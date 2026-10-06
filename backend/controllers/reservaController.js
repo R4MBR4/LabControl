@@ -156,9 +156,17 @@ async function create(req, res) {
       const c = conflitos[0];
       const recNome = c.equipamento_nome || c.espaco_nome || 'o recurso selecionado';
       const usrNome = c.usuario_nome ? ` (por ${c.usuario_nome})` : '';
+      const sugestoes = await reservaModel.getConflictSuggestions({
+        equipamento_id: equipamento_id || null,
+        espaco_id: finalEspacoId,
+        data_inicio,
+        data_fim,
+        usuario_id
+      });
       return res.status(409).json({
         error: `Conflito de horário: já existe uma reserva ativa para ${recNome}${usrNome} entre ${new Date(c.data_inicio).toLocaleString('pt-BR')} e ${new Date(c.data_fim).toLocaleString('pt-BR')}.`,
-        conflitos
+        conflitos,
+        sugestoes
       });
     }
 
