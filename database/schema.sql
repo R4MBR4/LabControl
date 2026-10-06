@@ -385,8 +385,10 @@ CREATE TABLE `notificacao` (
   `link` VARCHAR(255) NULL,
   `entidade` VARCHAR(50) NULL,
   `entidade_id` VARCHAR(100) NULL,
+  `dedupe_key` VARCHAR(191) NULL,
   `lida_em` DATETIME NULL,
   `criada_em` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE INDEX `uq_notificacao_dedupe_key` (`dedupe_key`),
   INDEX `idx_notificacao_usuario_data` (`usuario_id`, `criada_em`),
   INDEX `idx_notificacao_usuario_lida` (`usuario_id`, `lida_em`),
   CONSTRAINT `fk_notificacao_usuario`

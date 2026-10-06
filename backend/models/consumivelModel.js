@@ -88,7 +88,7 @@ async function registerMovement({
   usuarioId,
   observacao
 }, executor) {
-  await executor.query(`
+  const [result] = await executor.query(`
     INSERT INTO \`${MOVEMENT_TABLE}\`
       (consumivel_id, consumivel_nome, tipo, quantidade_anterior, quantidade_movimentada,
        quantidade_resultante, usuario_id, observacao)
@@ -103,6 +103,7 @@ async function registerMovement({
     usuarioId || null,
     observacao || null
   ]);
+  return result.insertId;
 }
 
 async function movimentarEstoque(id, tipo, quantidade, usuarioId, observacao = '', executor = pool) {
@@ -141,7 +142,7 @@ async function movimentarEstoque(id, tipo, quantidade, usuarioId, observacao = '
     throw stockError('O saldo foi alterado simultaneamente. Recarregue e tente novamente.', 409);
   }
 
-  await registerMovement({
+  const movimentoId = await registerMovement({
     consumivelId: id,
     consumivelNome: item.nome,
     tipo,
@@ -161,6 +162,7 @@ async function movimentarEstoque(id, tipo, quantidade, usuarioId, observacao = '
       quantidade_anterior: saldoAtual,
       quantidade_movimentada: amount,
       quantidade_resultante: novoSaldo,
+      id: movimentoId,
       usuario_id: usuarioId,
       observacao: observacao || null
     }

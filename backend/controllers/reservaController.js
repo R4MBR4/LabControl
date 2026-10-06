@@ -5,6 +5,30 @@ const auditoriaModel = require('../models/auditoriaModel');
 const notificacaoModel = require('../models/notificacaoModel');
 const { pool } = require('../models/dbHelper');
 
+async function notifyNoShow(reservaId, usuarioId, executor) {
+  await notificacaoModel.createForRole('admin', {
+    tipo: 'reserva_no_show',
+    titulo: 'Reserva marcada como no-show',
+    mensagem: `A reserva #${reservaId} ultrapassou a tolerância sem utilização.`,
+    link: '/reservas',
+    entidade: 'reserva',
+    entidade_id: reservaId,
+    dedupe_key: `reserva_no_show_admin:${reservaId}`
+  }, executor);
+  if (usuarioId) {
+    await notificacaoModel.createForUser({
+      usuario_id: usuarioId,
+      tipo: 'reserva_no_show',
+      titulo: 'No-show registrado na reserva',
+      mensagem: `A reserva #${reservaId} foi registrada como no-show.`,
+      link: '/reservas',
+      entidade: 'reserva',
+      entidade_id: reservaId,
+      dedupe_key: `reserva_no_show_usuario:${reservaId}`
+    }, executor);
+  }
+}
+
 async function list(req, res) {
   try {
     const filters = {};
@@ -221,7 +245,8 @@ async function create(req, res) {
       mensagem: `${req.user.nome || 'Um usuário'} solicitou uma reserva${finalidade ? `: ${finalidade}` : '.'}`,
       link: '/reservas',
       entidade: 'reserva',
-      entidade_id: nova.id || nova.id_reserva
+      entidade_id: nova.id || nova.id_reserva,
+      dedupe_key: `reserva_criada:${nova.id || nova.id_reserva}`
     }, connection, usuario_id);
     await connection.commit();
     transactionStarted = false;
@@ -311,7 +336,8 @@ async function updateStatus(req, res) {
         mensagem: `O status da sua reserva foi alterado para "${status}".`,
         link: '/reservas',
         entidade: 'reserva',
-        entidade_id: req.params.id
+        entidade_id: req.params.id,
+        dedupe_key: `reserva_atualizada:${req.params.id}:${String(status).toLowerCase()}`
       }, connection);
     }
     await connection.commit();
@@ -586,6 +612,11 @@ async function marcarNoShow(req, res) {
       usuario_id: req.user.id,
       detalhes: { data_inicio: reserva.data_inicio }
     }, connection);
+    await notifyNoShow(
+      reserva.id || reserva.id_reserva || req.params.id,
+      reserva.usuario_id || reserva.id_usuario,
+      connection
+    );
     await connection.commit();
     transactionStarted = false;
     res.json({ message: 'No-show registrado com sucesso. Histórico preservado.', reserva });
@@ -621,6 +652,11 @@ async function verificarNoShows(req, res) {
         usuario_id: req.user.id,
         detalhes: { tolerancia_minutos: tolerancia, data_inicio: candidato.data_inicio }
       }, connection);
+      await notifyNoShow(
+        candidato.id,
+        candidato.usuario_id || reserva?.usuario_id || reserva?.id_usuario,
+        connection
+      );
     }
     await connection.commit();
     transactionStarted = false;

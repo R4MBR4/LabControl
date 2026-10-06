@@ -13,7 +13,8 @@
     "test:categorias-importacao": "node teste-categorias-importacao.js",
     "test:historico-consumiveis": "node teste-historico-consumiveis.js",
     "test:calendario-reservas": "node teste-calendario-reservas.js",
-    "test:relatorios": "node teste-relatorios.js"
+    "test:relatorios": "node teste-relatorios.js",
+    "test:notificacoes": "node teste-notificacoes-internas.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

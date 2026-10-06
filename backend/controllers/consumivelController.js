@@ -1,5 +1,6 @@
 const consumivelModel = require('../models/consumivelModel');
-const { pool } = require('../models/dbHelper');
+const notificacaoModel = require('../models/notificacaoModel');
+const { pool, resolveColumn } = require('../models/dbHelper');
 
 async function list(req, res) {
   try {
@@ -117,6 +118,17 @@ async function movimentar(req, res) {
     connection = await pool.getConnection();
     await connection.beginTransaction();
     transactionStarted = true;
+    const antes = await consumivelModel.getConsumivelById(req.params.id, connection);
+    if (!antes) {
+      const error = new Error('Consumível não encontrado.');
+      error.statusCode = 404;
+      throw error;
+    }
+    const quantidadeMinimaColumn = await resolveColumn(
+      'consumivel',
+      ['quantidade_minima', 'estoque_minimo', 'qtd_minima']
+    );
+    const quantidadeMinima = Number(antes[quantidadeMinimaColumn] || 0);
     const resultado = await consumivelModel.movimentarEstoque(
       req.params.id,
       movementType.toLowerCase(),
@@ -125,6 +137,19 @@ async function movimentar(req, res) {
       observation,
       connection
     );
+    const saldoAnterior = Number(resultado.movimentacao.quantidade_anterior);
+    const saldoAtual = Number(resultado.movimentacao.quantidade_resultante);
+    if (saldoAnterior > quantidadeMinima && saldoAtual <= quantidadeMinima) {
+      await notificacaoModel.createForRole('admin', {
+        tipo: 'estoque_baixo',
+        titulo: 'Estoque de consumível baixo',
+        mensagem: `${resultado.movimentacao.consumivel_nome} atingiu o limite mínimo de estoque (${saldoAtual}).`,
+        link: '/consumiveis',
+        entidade: 'consumivel',
+        entidade_id: req.params.id,
+        dedupe_key: `estoque_baixo:${req.params.id}:${resultado.movimentacao.id}`
+      }, connection, req.user.id);
+    }
     await connection.commit();
     transactionStarted = false;
     res.json({

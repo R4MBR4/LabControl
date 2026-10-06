@@ -1,11 +1,11 @@
 const { pool } = require('./dbHelper');
 
 async function createForUser(notification, executor = pool) {
-  const [result] = await executor.query(`
-    INSERT INTO notificacao
-      (usuario_id, tipo, titulo, mensagem, link, entidade, entidade_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `, [
+  if (notification.dedupe_key !== undefined
+    && (typeof notification.dedupe_key !== 'string' || notification.dedupe_key.length > 191)) {
+    throw new Error('A chave de deduplicação da notificação deve conter até 191 caracteres.');
+  }
+  const values = [
     notification.usuario_id,
     notification.tipo,
     notification.titulo,
@@ -15,7 +15,23 @@ async function createForUser(notification, executor = pool) {
     notification.entidade_id === undefined || notification.entidade_id === null
       ? null
       : String(notification.entidade_id)
-  ]);
+  ];
+
+  if (notification.dedupe_key) {
+    const [result] = await executor.query(`
+      INSERT INTO notificacao
+        (usuario_id, tipo, titulo, mensagem, link, entidade, entidade_id, dedupe_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)
+    `, [...values, notification.dedupe_key]);
+    return result.insertId;
+  }
+
+  const [result] = await executor.query(`
+    INSERT INTO notificacao
+      (usuario_id, tipo, titulo, mensagem, link, entidade, entidade_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `, values);
   return result.insertId;
 }
 
@@ -32,7 +48,10 @@ async function createForRole(role, notification, executor = pool, excludeUserId 
     );
   const recipients = users.filter((user) => Number(user.id) !== Number(excludeUserId));
   for (const user of recipients) {
-    await createForUser({ ...notification, usuario_id: user.id }, executor);
+    const dedupeKey = notification.dedupe_key
+      ? `${notification.dedupe_key}:${user.id}`
+      : undefined;
+    await createForUser({ ...notification, usuario_id: user.id, dedupe_key: dedupeKey }, executor);
   }
   return recipients.length;
 }
@@ -53,6 +72,22 @@ async function listByUser(usuarioId, limit = 50) {
   `, [usuarioId]);
 
   return { items: rows, unread: Number(total_nao_lidas) };
+}
+
+async function getReservasProximas(executor = pool) {
+  const [rows] = await executor.query(`
+    SELECT r.id, r.usuario_id, r.data_inicio, r.finalidade
+    FROM reserva r
+    WHERE r.status = 'confirmada'
+      AND (r.no_show = 0 OR r.no_show IS NULL)
+      AND r.data_inicio >= NOW()
+      AND r.data_inicio < DATE_ADD(NOW(), INTERVAL 15 MINUTE)
+      AND NOT EXISTS (
+        SELECT 1 FROM utilizacao u WHERE u.reserva_id = r.id
+      )
+    ORDER BY r.data_inicio ASC
+  `);
+  return rows;
 }
 
 async function markRead(id, usuarioId) {
@@ -82,6 +117,7 @@ async function markAllRead(usuarioId) {
 module.exports = {
   createForUser,
   createForRole,
+  getReservasProximas,
   listByUser,
   markRead,
   markAllRead

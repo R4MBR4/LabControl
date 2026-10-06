@@ -1,5 +1,6 @@
 const inventarioModel = require('../models/inventarioModel');
 const auditoriaModel = require('../models/auditoriaModel');
+const notificacaoModel = require('../models/notificacaoModel');
 const { pool } = require('../models/dbHelper');
 
 async function list(req, res) {
@@ -48,6 +49,15 @@ async function start(req, res) {
       usuario_id,
       detalhes: { espaco_id: novo.espaco_id, total_esperados: novo.total_esperados }
     }, connection);
+    await notificacaoModel.createForRole('admin', {
+      tipo: 'inventario_iniciado',
+      titulo: 'Inventário iniciado',
+      mensagem: `Uma sessão de inventário foi iniciada no laboratório #${novo.espaco_id}.`,
+      link: '/inventario',
+      entidade: 'inventario',
+      entidade_id: novo.id,
+      dedupe_key: `inventario_iniciado:${novo.id}`
+    }, connection, usuario_id);
     await connection.commit();
     transactionStarted = false;
     res.status(201).json(novo);
@@ -89,6 +99,15 @@ async function scan(req, res) {
           espaco_encontrado_id: resultado.item.espaco_encontrado_id
         }
       }, connection);
+      await notificacaoModel.createForRole('admin', {
+        tipo: 'inventario_divergencia',
+        titulo: 'Divergência de inventário detectada',
+        mensagem: `O equipamento "${resultado.equipamento.nome}" foi encontrado em um laboratório diferente do cadastrado.`,
+        link: '/inventario',
+        entidade: 'inventario_item',
+        entidade_id: resultado.item.id,
+        dedupe_key: `inventario_divergencia:${resultado.item.id}`
+      }, connection, usuario_id);
     }
     await connection.commit();
     transactionStarted = false;

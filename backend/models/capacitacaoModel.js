@@ -66,9 +66,11 @@ async function checkUserCapacitacao(userId, equipId) {
   return rows.length > 0;
 }
 
-async function createCapacitacao(data) {
-  const id = await insert(TABLE, data);
-  return findById(TABLE, id);
+async function createCapacitacao(data, executor = pool) {
+  const id = await insert(TABLE, data, executor);
+  const pk = await getPrimaryKey(TABLE);
+  const [rows] = await executor.query(`SELECT * FROM \`${TABLE}\` WHERE \`${pk}\` = ? LIMIT 1`, [id]);
+  return rows[0] || null;
 }
 
 async function updateCapacitacao(id, data) {

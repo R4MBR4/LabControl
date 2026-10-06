@@ -67,6 +67,7 @@ function createConnection() {
 async function testSchedulerAuditAndRollback() {
   const connection = createConnection();
   const auditEvents = [];
+  const sentNotifications = [];
   let receivedTolerance;
   const scheduler = createNoShowScheduler({
     connectionPool: { async getConnection() { return connection; } },
@@ -80,7 +81,7 @@ async function testSchedulerAuditAndRollback() {
         assert.equal(executor, connection);
         return {
           totalMarcados: 1,
-          reservas: [{ id: 17, data_inicio: '2026-10-06 10:00:00' }]
+          reservas: [{ id: 17, usuario_id: 4, data_inicio: '2026-10-06 10:00:00' }]
         };
       }
     },
@@ -88,6 +89,20 @@ async function testSchedulerAuditAndRollback() {
       async registrarEvento(event, executor) {
         assert.equal(executor, connection);
         auditEvents.push(event);
+      }
+    },
+    notificacoes: {
+      async getReservasProximas(executor) {
+        assert.equal(executor, connection);
+        return [];
+      },
+      async createForRole(role, notification, executor) {
+        assert.equal(executor, connection);
+        sentNotifications.push({ role, notification });
+      },
+      async createForUser(notification, executor) {
+        assert.equal(executor, connection);
+        sentNotifications.push({ role: 'user', notification });
       }
     },
     intervalMs: 1_000,
@@ -103,6 +118,9 @@ async function testSchedulerAuditAndRollback() {
   assert.equal(auditEvents[0].usuario_id, null);
   assert.equal(auditEvents[0].detalhes.origem, 'agendador_automatico');
   assert.equal(auditEvents[0].detalhes.tolerancia_minutos, 25);
+  assert.equal(sentNotifications.length, 2);
+  assert.match(sentNotifications[0].notification.dedupe_key, /^reserva_no_show_admin:17$/);
+  assert.match(sentNotifications[1].notification.dedupe_key, /^reserva_no_show_usuario:17$/);
   assert.equal(connection.began, true);
   assert.equal(connection.committed, true);
   assert.equal(connection.rolledBack, false);
@@ -119,6 +137,11 @@ async function testSchedulerAuditAndRollback() {
     },
     auditoria: {
       async registrarEvento() { throw new Error('falha simulada na auditoria'); }
+    },
+    notificacoes: {
+      async getReservasProximas() { return []; },
+      async createForRole() {},
+      async createForUser() {}
     },
     intervalMs: 1_000,
     logger: { info() {}, error() {} }
@@ -143,6 +166,11 @@ async function testSchedulerStartsAutomatically() {
       async verificarNoShowsAutomaticos() { return { totalMarcados: 0, reservas: [] }; }
     },
     auditoria: { async registrarEvento() {} },
+    notificacoes: {
+      async getReservasProximas() { return []; },
+      async createForRole() {},
+      async createForUser() {}
+    },
     intervalMs: 1_000,
     logger: { info() {}, error() {} }
   });
@@ -153,10 +181,49 @@ async function testSchedulerStartsAutomatically() {
   assert.equal(calls, 2);
 }
 
+async function testUpcomingReservationReminder() {
+  const connection = createConnection();
+  const sent = [];
+  const scheduler = createNoShowScheduler({
+    connectionPool: { async getConnection() { return connection; } },
+    reservas: {
+      async getToleranciaNoShow() { return 15; },
+      async verificarNoShowsAutomaticos() { return { totalMarcados: 0, reservas: [] }; }
+    },
+    auditoria: { async registrarEvento() {} },
+    notificacoes: {
+      async getReservasProximas(executor) {
+        assert.equal(executor, connection);
+        return [{
+          id: 29,
+          usuario_id: 6,
+          data_inicio: '2026-10-06 10:00:00',
+          finalidade: 'Aula prática'
+        }];
+      },
+      async createForRole() {},
+      async createForUser(notification, executor) {
+        assert.equal(executor, connection);
+        sent.push(notification);
+      }
+    },
+    intervalMs: 1_000,
+    logger: { info() {}, error() {} }
+  });
+
+  await scheduler.checkOnce();
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].tipo, 'reserva_proxima');
+  assert.equal(sent[0].entidade_id, 29);
+  assert.equal(sent[0].dedupe_key, 'reserva_proxima:29:6');
+  assert.equal(connection.committed, true);
+}
+
 (async () => {
   await testAutomaticReservationSelection();
   await testSchedulerAuditAndRollback();
   await testSchedulerStartsAutomatically();
+  await testUpcomingReservationReminder();
   console.log('Testes de no-show automático passaram.');
 })().catch((error) => {
   console.error(error);

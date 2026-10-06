@@ -1,4 +1,6 @@
 const capacitacaoModel = require('../models/capacitacaoModel');
+const notificacaoModel = require('../models/notificacaoModel');
+const { pool } = require('../models/dbHelper');
 
 async function list(req, res) {
   try {
@@ -42,16 +44,37 @@ async function check(req, res) {
 }
 
 async function create(req, res) {
+  let connection;
+  let transactionStarted = false;
   try {
     const { usuario_id, equipamento_id } = req.body;
     if (!usuario_id || !equipamento_id) {
       return res.status(400).json({ error: 'Identificador de usuário e equipamento são obrigatórios' });
     }
-    const nova = await capacitacaoModel.createCapacitacao(req.body);
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const nova = await capacitacaoModel.createCapacitacao(req.body, connection);
+    const capacitacaoId = nova.id || nova.id_capacitacao;
+    await notificacaoModel.createForUser({
+      usuario_id,
+      tipo: 'capacitacao_registrada',
+      titulo: 'Capacitação registrada',
+      mensagem: `Uma capacitação para o equipamento #${equipamento_id} foi registrada em seu nome.`,
+      link: '/capacitacoes',
+      entidade: 'capacitacao',
+      entidade_id: capacitacaoId,
+      dedupe_key: `capacitacao_registrada:${capacitacaoId}:${usuario_id}`
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
     res.status(201).json(nova);
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Capacitacao] Erro ao registrar:', err);
     res.status(500).json({ error: 'Erro ao registrar capacitação: ' + err.message });
+  } finally {
+    if (connection) connection.release();
   }
 }
 

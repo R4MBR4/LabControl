@@ -83,7 +83,8 @@ async function create(req, res) {
       mensagem: `${titulo}${equipamento_id ? ` · equipamento #${equipamento_id}` : ''}`,
       link: '/ocorrencias',
       entidade: 'ocorrencia',
-      entidade_id: nova.id || nova.id_ocorrencia
+      entidade_id: nova.id || nova.id_ocorrencia,
+      dedupe_key: `ocorrencia_registrada:${nova.id || nova.id_ocorrencia}`
     }, connection, usuario_id);
     await connection.commit();
     transactionStarted = false;
@@ -169,6 +170,15 @@ async function decidir(req, res) {
             ocorrencia_id: ocorrencia.id || ocorrencia.id_ocorrencia
           }
         }, connection);
+        await notificacaoModel.createForRole('admin', {
+          tipo: 'manutencao_iniciada',
+          titulo: 'Manutenção iniciada',
+          mensagem: `A manutenção do equipamento #${equipId} foi iniciada após análise de ocorrência.`,
+          link: '/manutencao',
+          entidade: 'manutencao',
+          entidade_id: manutencao.id || manutencao.id_manutencao,
+          dedupe_key: `manutencao_iniciada:${manutencao.id || manutencao.id_manutencao}`
+        }, connection, req.user.id);
       } else {
         await equipamentoModel.updateStatus(equipId, 'manutencao', connection);
       }
@@ -203,7 +213,8 @@ async function decidir(req, res) {
         mensagem: `Sua ocorrência "${ocorrencia.titulo || 'Ocorrência'}" foi atualizada para "${statusAtualizado}".`,
         link: '/ocorrencias',
         entidade: 'ocorrencia',
-        entidade_id: req.params.id
+        entidade_id: req.params.id,
+        dedupe_key: `ocorrencia_atualizada:${req.params.id}:${statusAtualizado}`
       }, connection);
     }
 

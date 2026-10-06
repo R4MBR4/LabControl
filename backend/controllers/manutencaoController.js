@@ -1,5 +1,6 @@
 const manutencaoModel = require('../models/manutencaoModel');
 const auditoriaModel = require('../models/auditoriaModel');
+const notificacaoModel = require('../models/notificacaoModel');
 const { pool } = require('../models/dbHelper');
 
 async function list(req, res) {
@@ -66,6 +67,15 @@ async function create(req, res) {
       usuario_id: req.user.id,
       detalhes: { tipo: nova.tipo, descricao: nova.descricao, ocorrencia_id: nova.ocorrencia_id || null }
     }, connection);
+    await notificacaoModel.createForRole('admin', {
+      tipo: 'manutencao_iniciada',
+      titulo: 'Manutenção iniciada',
+      mensagem: `A manutenção do equipamento #${equipamento_id} foi iniciada.`,
+      link: '/manutencao',
+      entidade: 'manutencao',
+      entidade_id: nova.id || nova.id_manutencao,
+      dedupe_key: `manutencao_iniciada:${nova.id || nova.id_manutencao}`
+    }, connection, req.user.id);
     await connection.commit();
     transactionStarted = false;
 
@@ -128,6 +138,15 @@ async function concluir(req, res) {
         equipamento_liberado: (atualizada.equipamento_status || '').toLowerCase() === 'disponivel'
       }
     }, connection);
+    await notificacaoModel.createForRole('admin', {
+      tipo: 'manutencao_concluida',
+      titulo: 'Manutenção concluída',
+      mensagem: `A manutenção do equipamento #${atualizada.equipamento_id || atualizada.id_equipamento} foi concluída.`,
+      link: '/manutencao',
+      entidade: 'manutencao',
+      entidade_id: req.params.id,
+      dedupe_key: `manutencao_concluida:${req.params.id}`
+    }, connection, req.user.id);
     await connection.commit();
     transactionStarted = false;
 
