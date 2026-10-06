@@ -17,14 +17,17 @@ import {
   X,
   ShieldCheck,
   User as UserIcon,
-  ClipboardCheck
+  ClipboardCheck,
+  Search
 } from 'lucide-react';
+import BuscaGlobal from './BuscaGlobal';
 
 export default function Navbar() {
   const { user, isAdmin, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -89,6 +92,15 @@ export default function Navbar() {
 
           {/* Lado Direito Desktop: Perfil do Usuário e Botão Sair com Ícone (como antes) */}
           <div className="hidden lg:flex items-center gap-1.5 shrink-0 pl-2 border-l border-slate-200">
+            <button
+              type="button"
+              onClick={() => setGlobalSearchOpen(true)}
+              aria-label="Abrir busca global"
+              title="Buscar em todo o LabControl"
+              className="rounded-lg p-1.5 text-slate-500 hover:bg-teal-50 hover:text-teal-700"
+            >
+              <Search className="h-4 w-4" />
+            </button>
             <div className="flex flex-col items-end leading-tight pr-1">
               <span className="text-xs font-semibold text-slate-800 max-w-[110px] truncate" title={user?.nome}>
                 {user?.nome || 'Usuário'}
@@ -113,6 +125,17 @@ export default function Navbar() {
 
           {/* Lado Direito Celular e Tablet: Botão Sair Ícone + Menu Hambúrguer */}
           <div className="flex items-center gap-1 lg:hidden shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                setGlobalSearchOpen(true);
+              }}
+              aria-label="Abrir busca global"
+              className="rounded-lg p-1.5 text-slate-500 hover:bg-teal-50 hover:text-teal-700"
+            >
+              <Search className="h-4 w-4" />
+            </button>
             <button
               onClick={handleLogout}
               title="Sair do sistema"
@@ -183,6 +206,7 @@ export default function Navbar() {
           </div>
         </div>
       )}
+      {globalSearchOpen && <BuscaGlobal onClose={() => setGlobalSearchOpen(false)} />}
     </nav>
   );
 }

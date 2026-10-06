@@ -6,11 +6,7 @@ async function list(req, res) {
     res.json(espacos);
   } catch (err) {
     console.error('[Espaco] Erro ao listar:', err.message);
-    res.json([
-      { id: 1, nome: 'Laboratório de Robótica e Automação', tipo: 'Laboratório', capacidade: 25, localizacao: 'Bloco B - Sala 102', status: 'disponivel', descricao: 'Bancadas equipadas com osciloscópios, fontes DC e kits de microcontroladores.' },
-      { id: 2, nome: 'Laboratório de Prototipagem e Impressão 3D', tipo: 'Oficina / Maker', capacidade: 15, localizacao: 'Bloco B - Sala 104', status: 'disponivel', descricao: 'Ambiente com impressoras 3D, fresadoras CNC e ferramentas de montagem rápida.' },
-      { id: 3, nome: 'Sala de Pesquisa e Simulação Computacional', tipo: 'Informática', capacidade: 30, localizacao: 'Bloco A - Sala 201', status: 'disponivel', descricao: 'Computadores de alto desempenho com softwares CAD e ferramentas de simulação.' }
-    ]);
+    res.status(500).json({ error: 'Não foi possível carregar os espaços. Tente novamente.' });
   }
 }
 

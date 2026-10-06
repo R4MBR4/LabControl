@@ -145,12 +145,13 @@ LabControl/
 
 ---
 
-## 5. Estado após os blocos de reservas, dashboard, ocorrências/manutenção, auditoria e CSV
+## 5. Estado após os blocos de reservas, dashboard, ocorrências/manutenção, auditoria, CSV e UX
 
 * **Tolerância de no-show:** Configuração administrativa persistida em `configuracao_sistema`; aplicar `database/migrations/07_configuracao_no_show.sql` em bancos existentes.
 * **Dashboard administrativo:** KPIs de equipamentos, espaços, reservas, ocorrências, manutenção e estoque; utilização atual; alertas operacionais e gráficos compactos. Erros da consulta são reportados, sem valores demonstrativos substituindo métricas reais.
 * **Ocorrências e manutenção:** Check-out com avaria é transacional e exige evidência; encaminhamento cria ordem vinculada; laudo é obrigatório para concluir; o equipamento só é liberado sem outras ordens abertas e sem inativação; API preserva ocorrências e ordens sem exclusão física. Aplicar também `database/migrations/08_vinculo_ocorrencia_manutencao.sql` em bancos existentes.
 * **Histórico e auditoria:** `auditoria_evento` registra autor, data/hora, ação e detalhes de alterações em equipamentos, inventário, reservas, utilizações, ocorrências e manutenção. Detalhes do equipamento combina a linha do tempo auditável com os registros operacionais legados; aplicar `database/migrations/09_historico_auditoria.sql` em bancos existentes.
 * **Importação/exportação CSV:** administração pode revisar patrimônio, campos obrigatórios, duplicidade, laboratório, status e capacitação antes da importação transacional. Há exportação CSV administrativa de equipamentos, laboratórios, reservas, utilizações, ocorrências, manutenções, consumíveis e inventários/itens de inventário. Categoria segue texto livre conforme o cadastro existente; imagens/evidências não são exportadas.
-* **Validação realizada:** build de produção do frontend, verificação de sintaxe do backend e testes direcionados do parser/validação/transações com dependências de banco simuladas. A integração com uma base MySQL configurada não foi executada nesta etapa.
-* **Próximo bloco recomendado:** confirmar se existem outros requisitos prioritários na especificação ainda não cobertos pelo sistema.
+* **UX:** busca global com resultados condicionados ao perfil; erros de carregamento explícitos e opção de tentar novamente nas listas principais; filtro de status nos espaços. As páginas já usam layouts responsivos por breakpoints e as reservas já possuem filtros avançados por recurso, laboratório, equipamento, status e período.
+* **Validação realizada:** build de produção do frontend, verificação de sintaxe do backend e testes direcionados do parser/validação/transações e pesquisa com dependências de banco simuladas. A integração com uma base MySQL configurada não foi executada nesta etapa.
+* **Próximo bloco recomendado — Relatórios:** inventário, utilização, reservas, ocorrências, manutenção e estoque, conforme a Fase 13 da especificação.

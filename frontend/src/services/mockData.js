@@ -228,7 +228,7 @@ function saveStorage(data) {
   }
 }
 
-export function handleMockRequest(method, url, data) {
+export function handleMockRequest(method, url, data, requestParams = {}) {
   const db = getStorage();
   const cleanUrl = url.split('?')[0];
 
@@ -266,6 +266,86 @@ export function handleMockRequest(method, url, data) {
     const storedUser = localStorage.getItem('labcontrol_user');
     const u = storedUser ? JSON.parse(storedUser) : db.usuarios[0];
     return ok(u);
+  }
+
+  if (cleanUrl === '/busca') {
+    const queryParams = new URLSearchParams(url.split('?')[1] || '');
+    const term = (queryParams.get('q') || requestParams.q || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (term.length < 2 || term.length > 80) {
+      return { data: { error: 'Informe uma busca com 2 a 80 caracteres.' }, status: 400, statusText: 'Bad Request' };
+    }
+    const storedUser = localStorage.getItem('labcontrol_user');
+    const user = storedUser ? JSON.parse(storedUser) : db.usuarios[0];
+    const role = String(user?.perfil || '').toLowerCase();
+    const admin = ['admin', 'administrador'].includes(role);
+    const reservationPrivileged = admin || ['docente', 'professor'].includes(role);
+    const searchable = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const matches = (item, fields) => fields.some((field) => searchable(item[field]).includes(term));
+    const results = [];
+
+    db.equipamentos.filter((item) => matches(item, [
+      'nome', 'categoria', 'marca', 'modelo', 'numero_serie', 'patrimonio_ufpi',
+      'codigo_patrimonio', 'codigo_labcontrol', 'espaco_nome', 'localizacao_detalhada'
+    ])).slice(0, 6).forEach((item) => results.push({
+      type: 'Equipamento',
+      title: item.nome,
+      subtitle: [item.patrimonio_ufpi || item.codigo_patrimonio, item.espaco_nome, item.status].filter(Boolean).join(' · '),
+      path: `/equipamentos/${item.id}`,
+      id: item.id
+    }));
+    db.espacos.filter((item) => matches(item, ['nome', 'codigo', 'localizacao', 'descricao']))
+      .slice(0, 5).forEach((item) => results.push({
+        type: 'Espaço',
+        title: item.nome,
+        subtitle: [item.codigo, item.localizacao, item.status].filter(Boolean).join(' · '),
+        path: `/espacos/${item.id}`,
+        id: item.id
+      }));
+    db.reservas.filter((item) => (reservationPrivileged || Number(item.usuario_id) === Number(user?.id)) &&
+      matches(item, ['finalidade', 'observacoes', 'usuario_nome', 'equipamento_nome', 'equipamento_codigo', 'espaco_nome', 'status']))
+      .slice(0, 5).forEach((item) => results.push({
+        type: 'Reserva',
+        title: item.equipamento_nome || item.espaco_nome || 'Reserva',
+        subtitle: [item.finalidade, item.status].filter(Boolean).join(' · '),
+        path: '/reservas',
+        id: item.id
+      }));
+    db.ocorrencias.filter((item) => (admin || Number(item.usuario_id) === Number(user?.id)) &&
+      matches(item, ['titulo', 'descricao', 'equipamento_nome', 'status', 'gravidade']))
+      .slice(0, 5).forEach((item) => results.push({
+        type: 'Ocorrência',
+        title: item.titulo,
+        subtitle: [item.equipamento_nome, item.status, item.gravidade].filter(Boolean).join(' · '),
+        path: '/ocorrencias',
+        id: item.id
+      }));
+    db.consumiveis.filter((item) => matches(item, ['nome', 'categoria', 'localizacao', 'descricao']))
+      .slice(0, 5).forEach((item) => results.push({
+        type: 'Consumível',
+        title: item.nome,
+        subtitle: [item.categoria, item.localizacao].filter(Boolean).join(' · '),
+        path: '/consumiveis',
+        id: item.id
+      }));
+    if (admin) {
+      db.manutencoes.filter((item) => matches(item, ['descricao', 'responsavel', 'tipo', 'equipamento_nome', 'status']))
+        .slice(0, 5).forEach((item) => results.push({
+          type: 'Manutenção',
+          title: item.equipamento_nome || item.descricao,
+          subtitle: [item.tipo, item.status, item.responsavel].filter(Boolean).join(' · '),
+          path: '/manutencao',
+          id: item.id
+        }));
+      (db.inventarios || []).filter((item) => matches(item, ['espaco_nome', 'espaco_codigo', 'status', 'observacoes']))
+        .slice(0, 5).forEach((item) => results.push({
+          type: 'Inventário',
+          title: item.espaco_nome || `Sessão #${item.id}`,
+          subtitle: [item.espaco_codigo, item.status].filter(Boolean).join(' · '),
+          path: '/inventario',
+          id: item.id
+        }));
+    }
+    return ok({ results: results.slice(0, 30), truncated: results.length > 30 });
   }
 
   // 2. DASHBOARD

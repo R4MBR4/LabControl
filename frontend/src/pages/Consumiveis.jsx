@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
+import LoadError from '../components/LoadError';
 import {
   Boxes,
   Plus,
@@ -19,6 +20,7 @@ export default function Consumiveis() {
   const { isAdmin } = useAuth();
   const [consumiveis, setConsumiveis] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
 
   const [modalNewOpen, setModalNewOpen] = useState(false);
@@ -45,10 +47,12 @@ export default function Consumiveis() {
   const loadData = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const res = await api.get('/consumiveis');
       setConsumiveis(res.data);
     } catch (err) {
       console.error('[Consumiveis] Erro:', err);
+      setLoadError(err.response?.data?.error || 'Verifique a conexão e tente carregar novamente.');
     } finally {
       setLoading(false);
     }
@@ -152,6 +156,7 @@ export default function Consumiveis() {
           <span>{success}</span>
         </div>
       )}
+      <LoadError message={loadError} onRetry={loadData} />
 
       {/* Busca */}
       <div className="relative max-w-md">
@@ -170,7 +175,7 @@ export default function Consumiveis() {
         <div className="py-12 flex justify-center">
           <div className="w-8 h-8 border-3 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : loadError ? null : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-400 text-sm">
           Nenhum item consumível encontrado.
         </div>

@@ -107,6 +107,9 @@ LabControl/
 
    Colunas obrigatórias para importar equipamentos: `patrimonio_ufpi`, `nome` e `laboratorio` (nome ou código do espaço). Categoria permanece texto livre, como no cadastro manual. Status aceitos: `disponivel`, `em_uso`, `manutencao` ou `inativo`. Arquivos CSV são limitados a 10 MB.
 
+8. **Experiência de uso:**
+   A busca global na barra superior pesquisa equipamentos, espaços, reservas, ocorrências e consumíveis; administradores também pesquisam manutenções e inventários. Os resultados respeitam as permissões de cada perfil. Erros de carregamento nas principais listas exibem orientação e ação para tentar novamente; a lista de espaços combina busca textual com filtro por status.
+
 ---
 
 ## 🚀 Como Executar o Projeto

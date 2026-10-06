@@ -6,11 +6,7 @@ async function list(req, res) {
     res.json(itens);
   } catch (err) {
     console.error('[Consumivel] Erro ao listar:', err.message);
-    res.json([
-      { id: 1, nome: 'Filamento PLA 1.75mm Preto 1kg', categoria: 'Impressão 3D', quantidade: 2, quantidade_minima: 5, unidade_medida: 'rolo', localizacao: 'Armário A, Prateleira 2', estoque_critico: true },
-      { id: 2, nome: 'Placa de Cobre Virgem para PCI', categoria: 'Eletrônica', quantidade: 40, quantidade_minima: 15, unidade_medida: 'un', localizacao: 'Gaveteiro 3', estoque_critico: false },
-      { id: 3, nome: 'Álcool Isopropílico 99.8% 1L', categoria: 'Limpeza / Manutenção', quantidade: 1, quantidade_minima: 3, unidade_medida: 'litro', localizacao: 'Bancada Química', estoque_critico: true }
-    ]);
+    res.status(500).json({ error: 'Não foi possível carregar os consumíveis. Tente novamente.' });
   }
 }
 

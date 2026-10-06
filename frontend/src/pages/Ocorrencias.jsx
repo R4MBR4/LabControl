@@ -17,12 +17,14 @@ import {
   Eye
 } from 'lucide-react';
 import CameraEvidenceCapture from '../components/CameraEvidenceCapture';
+import LoadError from '../components/LoadError';
 
 export default function Ocorrencias() {
   const { user, isAdmin } = useAuth();
   const [ocorrencias, setOcorrencias] = useState([]);
   const [equipamentos, setEquipamentos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const [modalNewOpen, setModalNewOpen] = useState(false);
   const [modalDecidirOpen, setModalDecidirOpen] = useState(false);
@@ -50,6 +52,7 @@ export default function Ocorrencias() {
   const loadData = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const [resOc, resEq] = await Promise.all([
         api.get('/ocorrencias'),
         api.get('/equipamentos')
@@ -58,6 +61,7 @@ export default function Ocorrencias() {
       setEquipamentos(resEq.data);
     } catch (err) {
       console.error('[Ocorrencias] Erro:', err);
+      setLoadError(err.response?.data?.error || 'Verifique a conexão e tente carregar novamente.');
     } finally {
       setLoading(false);
     }
@@ -145,13 +149,14 @@ export default function Ocorrencias() {
           <span>{success}</span>
         </div>
       )}
+      <LoadError message={loadError} onRetry={loadData} />
 
       {/* Lista de Ocorrências */}
       {loading ? (
         <div className="py-12 flex justify-center">
           <div className="w-8 h-8 border-3 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
-      ) : ocorrencias.length === 0 ? (
+      ) : loadError ? null : ocorrencias.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-400 text-sm">
           Nenhuma ocorrência registrada. Tudo operando com normalidade!
         </div>

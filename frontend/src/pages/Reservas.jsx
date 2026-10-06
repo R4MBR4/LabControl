@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
+import LoadError from '../components/LoadError';
 import {
   CalendarCheck,
   Calendar as CalendarIcon,
@@ -33,6 +34,7 @@ export default function Reservas() {
   const [espacos, setEspacos] = useState([]);
   const [equipamentos, setEquipamentos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [cancellingId, setCancellingId] = useState(null);
 
   // Modo de visualização: 'tabela' ou 'calendario'
@@ -86,6 +88,7 @@ export default function Reservas() {
   const loadData = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const params = {};
       if (filtroStatus !== 'todas') params.status = filtroStatus;
       if (filtroTipoRecurso !== 'todos') params.tipo_recurso = filtroTipoRecurso;
@@ -105,6 +108,7 @@ export default function Reservas() {
       setEquipamentos(resEquip.data || []);
     } catch (err) {
       console.error('[Reservas] Erro ao carregar dados:', err);
+      setLoadError(err.response?.data?.error || 'Verifique a conexão e tente carregar novamente.');
     } finally {
       setLoading(false);
     }
@@ -559,6 +563,7 @@ export default function Reservas() {
           </button>
         </div>
       )}
+      <LoadError message={loadError} onRetry={loadData} />
 
       {/* Barra de Busca e Filtros Combinados */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4 shadow-xs">
@@ -689,7 +694,7 @@ export default function Reservas() {
       </div>
 
       {/* VISÃO 1: CALENDÁRIO INTERATIVO */}
-      {viewMode === 'calendario' && (
+      {viewMode === 'calendario' && !loadError && (
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 border-b border-slate-100">
             <div className="flex items-center gap-3">
@@ -1020,7 +1025,7 @@ export default function Reservas() {
       )}
 
       {/* VISÃO 2: TABELA ADMINISTRATIVA / LISTA */}
-      {viewMode === 'tabela' && (
+      {viewMode === 'tabela' && !loadError && (
         <>
           {loading ? (
             <div className="py-12 flex justify-center">

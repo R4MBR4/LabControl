@@ -39,7 +39,7 @@ api.interceptors.request.use(
         
         // Simula leve latência de 80ms para sensação fluida e realista
         await new Promise((r) => setTimeout(r, 80));
-        const res = handleMockRequest(method, cfg.url, bodyData);
+        const res = handleMockRequest(method, cfg.url, bodyData, cfg.params);
         if (res.status >= 400) {
           const err = new Error(res.data?.error || res.data?.message || 'Erro na requisição');
           err.response = {
@@ -82,7 +82,7 @@ api.interceptors.response.use(
           } catch (e) {
             bodyData = cfg.data;
           }
-          const res = handleMockRequest(method, cfg.url, bodyData);
+          const res = handleMockRequest(method, cfg.url, bodyData, cfg.params);
           return {
             data: res.data,
             status: res.status,

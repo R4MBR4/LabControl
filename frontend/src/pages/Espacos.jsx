@@ -2,13 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
+import LoadError from '../components/LoadError';
 import { Building2, Plus, Search, MapPin, Users, Edit, Trash2, X, CheckCircle2, Eye, Tv, Shield } from 'lucide-react';
 
 export default function Espacos() {
   const { isAdmin } = useAuth();
   const [espacos, setEspacos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('todos');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEspaco, setEditingEspaco] = useState(null);
   const [formData, setFormData] = useState({
@@ -27,10 +30,12 @@ export default function Espacos() {
   const loadEspacos = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const res = await api.get('/espacos');
       setEspacos(res.data);
     } catch (err) {
       console.error('[Espacos] Erro:', err);
+      setLoadError(err.response?.data?.error || 'Verifique a conexão e tente carregar novamente.');
     } finally {
       setLoading(false);
     }
@@ -108,9 +113,13 @@ export default function Espacos() {
   };
 
   const filtered = espacos.filter(e =>
-    e.nome?.toLowerCase().includes(search.toLowerCase()) ||
-    e.localizacao?.toLowerCase().includes(search.toLowerCase()) ||
-    e.tipo?.toLowerCase().includes(search.toLowerCase())
+    (statusFilter === 'todos' || String(e.status || 'disponivel').toLowerCase() === statusFilter) &&
+    (
+      e.nome?.toLowerCase().includes(search.toLowerCase()) ||
+      e.codigo?.toLowerCase().includes(search.toLowerCase()) ||
+      e.localizacao?.toLowerCase().includes(search.toLowerCase()) ||
+      e.tipo?.toLowerCase().includes(search.toLowerCase())
+    )
   );
 
   return (
@@ -141,17 +150,31 @@ export default function Espacos() {
           <span>{success}</span>
         </div>
       )}
+      <LoadError message={loadError} onRetry={loadEspacos} />
 
       {/* Busca */}
-      <div className="relative max-w-md">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-        <input
-          type="text"
-          placeholder="Buscar por nome, tipo ou localização..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition"
-        />
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="relative w-full max-w-md">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="search"
+            placeholder="Buscar por nome, código ou localização..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition"
+          />
+        </div>
+        <select
+          aria-label="Filtrar espaços por status"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-700 sm:w-auto"
+        >
+          <option value="todos">Todos os status</option>
+          <option value="disponivel">Disponível</option>
+          <option value="manutencao">Em manutenção</option>
+          <option value="inativo">Inativo</option>
+        </select>
       </div>
 
       {/* Grid de Espaços */}
@@ -159,9 +182,11 @@ export default function Espacos() {
         <div className="py-12 flex justify-center">
           <div className="w-8 h-8 border-3 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : loadError ? null : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-400 text-sm">
-          Nenhum espaço encontrado no momento.
+          {search || statusFilter !== 'todos'
+            ? 'Nenhum espaço corresponde aos filtros selecionados. Ajuste a busca ou o status.'
+            : 'Nenhum espaço cadastrado no momento.'}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

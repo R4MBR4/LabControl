@@ -21,12 +21,7 @@ async function list(req, res) {
     res.json(equipamentos);
   } catch (err) {
     console.error('[Equipamento] Erro ao listar:', err.message);
-    res.json([
-      { id: 1, nome: 'Impressora 3D Creality Ender 3 Pro', codigo_patrimonio: 'EQ-1001', patrimonio_ufpi: 'UFPI-1001', codigo_labcontrol: 'LC-EQ-0001', espaco_nome: 'Lab Prototipagem', categoria: 'Prototipagem', marca: 'Creality', status: 'disponivel', inativo: 0, exige_capacitacao: 1, descricao: 'Impressora FDM com área de impressão 220x220x250mm para filamentos PLA e PETG.' },
-      { id: 2, nome: 'Osciloscópio Digital Tektronix TBS1052B', codigo_patrimonio: 'EQ-1002', patrimonio_ufpi: 'UFPI-1002', codigo_labcontrol: 'LC-EQ-0002', espaco_nome: 'Lab Robótica', categoria: 'Eletrônica', marca: 'Tektronix', status: 'em_uso', inativo: 0, exige_capacitacao: 0, descricao: 'Dois canais, 50 MHz de largura de banda e taxa de amostragem de 1 GS/s.' },
-      { id: 3, nome: 'Cortadora a Laser CO2 60W', codigo_patrimonio: 'EQ-1003', patrimonio_ufpi: 'UFPI-1003', codigo_labcontrol: 'LC-EQ-0003', espaco_nome: 'Lab Prototipagem', categoria: 'Corte / Usinagem', marca: 'LaserMaster', status: 'manutencao', inativo: 0, exige_capacitacao: 1, descricao: 'Corte e gravação de chapas acrílicas e MDF. Bloqueada para alinhamento óptico.' },
-      { id: 4, nome: 'Fonte de Alimentação Simétrica DC 30V 5A', codigo_patrimonio: 'EQ-1004', patrimonio_ufpi: 'UFPI-1004', codigo_labcontrol: 'LC-EQ-0004', espaco_nome: 'Lab Robótica', categoria: 'Eletrônica', marca: 'Minipa', status: 'disponivel', inativo: 0, exige_capacitacao: 0, descricao: 'Fonte ajustável com proteção de sobrecorrente e display digital quádruplo.' }
-    ]);
+    res.status(500).json({ error: 'Não foi possível carregar os equipamentos. Tente novamente.' });
   }
 }
 

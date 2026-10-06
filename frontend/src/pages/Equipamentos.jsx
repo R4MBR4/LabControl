@@ -6,6 +6,7 @@ import QRCodeModal from '../components/QRCodeModal';
 import BatchQRCodeModal from '../components/BatchQRCodeModal';
 import QRPostInstallTester from '../components/QRPostInstallTester';
 import ImportacaoExportacaoCSV from '../components/ImportacaoExportacaoCSV';
+import LoadError from '../components/LoadError';
 import {
   Cpu,
   Plus,
@@ -38,6 +39,7 @@ export default function Equipamentos() {
   const [equipamentos, setEquipamentos] = useState([]);
   const [espacos, setEspacos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [viewFilter, setViewFilter] = useState('ativos'); // 'ativos', 'inativos', 'todos'
@@ -86,6 +88,7 @@ export default function Equipamentos() {
   const loadData = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const [resEquip, resEsp] = await Promise.all([
         api.get('/equipamentos?incluir_inativos=true'),
         api.get('/espacos')
@@ -94,6 +97,7 @@ export default function Equipamentos() {
       setEspacos(resEsp.data);
     } catch (err) {
       console.error('[Equipamentos] Erro:', err);
+      setLoadError(err.response?.data?.error || 'Verifique a conexão e tente carregar novamente.');
     } finally {
       setLoading(false);
     }
@@ -388,6 +392,7 @@ export default function Equipamentos() {
           <span>{success}</span>
         </div>
       )}
+      <LoadError message={loadError} onRetry={loadData} />
 
       {/* Controles, Filtros e Alternador Ativos/Inativos */}
       <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
@@ -500,7 +505,7 @@ export default function Equipamentos() {
         <div className="py-12 flex justify-center">
           <div className="w-8 h-8 border-3 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : loadError ? null : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-400 text-sm">
           Nenhum equipamento encontrado para os filtros selecionados.
         </div>

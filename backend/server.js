@@ -22,6 +22,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const tabelasRoutes = require('./routes/tabelasRoutes');
 const inventarioRoutes = require('./routes/inventarioRoutes');
 const integracaoRoutes = require('./routes/integracaoRoutes');
+const buscaRoutes = require('./routes/buscaRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -60,6 +61,7 @@ app.use('/api/capacitacoes', capacitacaoRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/inventarios', inventarioRoutes);
 app.use('/api/integracao', integracaoRoutes);
+app.use('/api/busca', buscaRoutes);
 app.use('/tabelas', tabelasRoutes);
 
 // Rota 404 para endpoints inexistentes
