@@ -125,6 +125,9 @@ LabControl/
 13. **Dados técnicos e documentos:**
    Os detalhes do equipamento apresentam os dados técnicos cadastrados (categoria, marca, modelo, número de série, localização e observações) e uma aba de documentos vinculados por título, tipo, URL e descrição opcional. Usuários autenticados podem consultar e abrir os links; somente administradores podem associar ou remover registros. Os arquivos continuam hospedados na origem indicada pelo link; a tabela separada `equipamento_documento` permite acrescentar armazenamento de arquivos futuramente.
 
+14. **OCR de patrimônio pela câmera:**
+   Durante uma sessão de inventário, o administrador pode capturar a etiqueta do equipamento pela câmera e reconhecer códigos UFPI, PAT ou LabControl. O OCR é executado no navegador e não envia a imagem ao backend. O primeiro uso requer conexão para carregar o mecanismo e os dados de reconhecimento; cada código reconhecido precisa ser revisado e confirmado no fluxo normal do inventário. A leitura não altera automaticamente patrimônio ou localização.
+
 ---
 
 ## 🚀 Como Executar o Projeto

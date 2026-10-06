@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import QRScanner from '../components/QRScanner';
+import OCRPatrimonio from '../components/OCRPatrimonio';
 import {
   ClipboardCheck,
   Building2,
@@ -442,6 +443,15 @@ export default function InventarioQR() {
               {/* Leitura Manual via Teclado / Leitor USB */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between space-y-4">
                 <div className="space-y-3">
+                  <OCRPatrimonio
+                    onCodeRecognized={(code) => {
+                      setManualCode(code);
+                      setScanFeedback({
+                        tipo: 'info',
+                        texto: `OCR leu ${code}. Revise o código e confirme a conferência.`
+                      });
+                    }}
+                  />
                   <h3 className="text-xs font-bold text-slate-800 flex items-center gap-2">
                     <Search className="w-4 h-4 text-teal-600" />
                     Entrada Manual de Código
