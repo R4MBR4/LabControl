@@ -20,8 +20,10 @@ import {
   X,
   CheckCircle2,
   AlertTriangle,
-  FileText
+  FileText,
+  Map
 } from 'lucide-react';
+import PlantaEspaco from '../components/PlantaEspaco';
 
 export default function EspacoDetalhes() {
   const { id } = useParams();
@@ -189,11 +191,11 @@ export default function EspacoDetalhes() {
       </div>
 
       {/* Navegação de Abas */}
-      <div className="border-b border-slate-200">
-        <nav className="flex space-x-6 text-xs font-semibold">
+      <div className="min-w-0 overflow-hidden border-b border-slate-200">
+        <nav className="flex min-w-0 gap-6 overflow-x-auto text-xs font-semibold" aria-label="Seções do espaço">
           <button
             onClick={() => setActiveTab('equipamentos')}
-            className={`pb-3 border-b-2 transition flex items-center gap-2 ${
+            className={`shrink-0 whitespace-nowrap pb-3 border-b-2 transition flex items-center gap-2 ${
               activeTab === 'equipamentos'
                 ? 'border-teal-600 text-teal-700 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -204,8 +206,20 @@ export default function EspacoDetalhes() {
           </button>
 
           <button
+            onClick={() => setActiveTab('planta')}
+            className={`shrink-0 whitespace-nowrap pb-3 border-b-2 transition flex items-center gap-2 ${
+              activeTab === 'planta'
+                ? 'border-teal-600 text-teal-700 font-bold'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Map className="w-4 h-4" />
+            <span>Planta 2D</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('reservas')}
-            className={`pb-3 border-b-2 transition flex items-center gap-2 ${
+            className={`shrink-0 whitespace-nowrap pb-3 border-b-2 transition flex items-center gap-2 ${
               activeTab === 'reservas'
                 ? 'border-teal-600 text-teal-700 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -217,7 +231,7 @@ export default function EspacoDetalhes() {
 
           <button
             onClick={() => setActiveTab('inventario')}
-            className={`pb-3 border-b-2 transition flex items-center gap-2 ${
+            className={`shrink-0 whitespace-nowrap pb-3 border-b-2 transition flex items-center gap-2 ${
               activeTab === 'inventario'
                 ? 'border-teal-600 text-teal-700 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -229,7 +243,7 @@ export default function EspacoDetalhes() {
 
           <button
             onClick={() => setActiveTab('regras')}
-            className={`pb-3 border-b-2 transition flex items-center gap-2 ${
+            className={`shrink-0 whitespace-nowrap pb-3 border-b-2 transition flex items-center gap-2 ${
               activeTab === 'regras'
                 ? 'border-teal-600 text-teal-700 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -243,6 +257,8 @@ export default function EspacoDetalhes() {
 
       {/* Conteúdo das Abas */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+        {activeTab === 'planta' && <PlantaEspaco equipamentos={equipamentos || []} />}
+
         {/* Aba 1: Equipamentos */}
         {activeTab === 'equipamentos' && (
           <div className="space-y-4">

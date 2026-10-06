@@ -113,6 +113,9 @@ LabControl/
 9. **Relatórios operacionais:**
    A página administrativa `/relatorios` reúne relatórios de inventário patrimonial, utilização, reservas, ocorrências, manutenção e posição atual do estoque. Os relatórios históricos aceitam filtros de período e situação; todos permitem exportar para CSV os registros correspondentes ao recorte aplicado. Os dados são consultados nas APIs existentes, sem tabelas adicionais.
 
+10. **Planta esquemática dos espaços:**
+   Os detalhes de cada espaço exibem uma planta 2D somente para visualização, agrupando equipamentos pela localização cadastrada. A representação é esquemática e sem escala; não permite arrastar ou editar posições. O componente separa a organização dos dados da renderização visual para possibilitar evolução futura do posicionamento sem alterar as páginas consumidoras.
+
 ---
 
 ## 🚀 Como Executar o Projeto
