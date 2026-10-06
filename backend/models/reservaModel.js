@@ -3,6 +3,11 @@ const { pool, getPrimaryKey, insert, update, remove, findById, findAll, resolveC
 const TABLE = 'reserva';
 const NO_SHOW_TOLERANCE_KEY = 'tolerancia_no_show_minutos';
 
+function normalizeEndDateFilter(value) {
+  const date = String(value || '');
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date} 23:59:59` : value;
+}
+
 async function getToleranciaNoShow(executor = pool) {
   const [rows] = await executor.query(
     'SELECT valor FROM `configuracao_sistema` WHERE chave = ? LIMIT 1',
@@ -105,7 +110,7 @@ async function getAllReservas(filters = {}) {
   }
   if (filters.data_fim_ate) {
     whereClauses.push(`r.data_fim <= ?`);
-    values.push(filters.data_fim_ate);
+    values.push(normalizeEndDateFilter(filters.data_fim_ate));
   }
 
   // Filtro de recorrência
@@ -367,16 +372,26 @@ async function getConflictSuggestions({
 /**
  * Consulta de eventos do calendário em um intervalo
  */
-async function getReservasCalendario({ inicio, fim, espaco_id, equipamento_id }) {
+async function getReservasCalendario({
+  inicio,
+  fim,
+  espaco_id,
+  equipamento_id,
+  tipo_recurso,
+  status,
+  data_inicio_de,
+  data_fim_ate,
+  search
+}) {
   const conditions = [];
   const params = [];
 
   if (inicio) {
-    conditions.push('r.data_fim >= ?');
+    conditions.push('r.data_fim > ?');
     params.push(inicio);
   }
   if (fim) {
-    conditions.push('r.data_inicio <= ?');
+    conditions.push('r.data_inicio < ?');
     params.push(fim);
   }
   if (espaco_id) {
@@ -387,19 +402,54 @@ async function getReservasCalendario({ inicio, fim, espaco_id, equipamento_id })
     conditions.push('r.equipamento_id = ?');
     params.push(equipamento_id);
   }
+  if (tipo_recurso === 'equipamento') {
+    conditions.push('r.equipamento_id IS NOT NULL');
+  } else if (tipo_recurso === 'espaco') {
+    conditions.push('r.equipamento_id IS NULL AND r.espaco_id IS NOT NULL');
+  }
+  if (status) {
+    conditions.push('LOWER(r.status) = LOWER(?)');
+    params.push(status);
+  }
+  if (data_inicio_de) {
+    conditions.push('r.data_inicio >= ?');
+    params.push(data_inicio_de);
+  }
+  if (data_fim_ate) {
+    conditions.push('r.data_fim <= ?');
+    params.push(normalizeEndDateFilter(data_fim_ate));
+  }
+  if (search && search.trim()) {
+    conditions.push(`(
+      r.finalidade LIKE ? OR
+      r.observacoes LIKE ? OR
+      u.nome LIKE ? OR
+      u.email LIKE ? OR
+      e.nome LIKE ? OR
+      e.codigo_patrimonio LIKE ? OR
+      s.nome LIKE ?
+    )`);
+    const term = `%${search.trim()}%`;
+    params.push(term, term, term, term, term, term, term);
+  }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const sql = `
     SELECT r.id, r.data_inicio, r.data_fim, r.finalidade, r.status,
            r.grupo_recorrencia_id, r.recorrente, r.no_show,
+           r.equipamento_id, r.espaco_id,
+           CASE WHEN r.equipamento_id IS NOT NULL THEN 'equipamento'
+                WHEN r.espaco_id IS NOT NULL THEN 'espaco'
+                ELSE NULL END AS tipo_recurso,
            u.nome AS usuario_nome,
            e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo,
-           s.nome AS espaco_nome
+           COALESCE(s.nome, es.nome) AS espaco_nome
     FROM \`${TABLE}\` r
     LEFT JOIN usuario u ON r.usuario_id = u.id
     LEFT JOIN equipamento e ON r.equipamento_id = e.id
     LEFT JOIN espaco s ON r.espaco_id = s.id
+    LEFT JOIN espaco es ON e.espaco_id = es.id
     ${where}
     ORDER BY r.data_inicio ASC
   `;

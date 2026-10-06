@@ -858,15 +858,62 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
   }
 
   if (cleanUrl === '/reservas/calendario') {
-    return ok(db.reservas.map(r => ({
+    const eventos = db.reservas.filter((reserva) => {
+      const equipamento = db.equipamentos.find((item) => Number(item.id) === Number(reserva.equipamento_id));
+      const laboratorioId = reserva.espaco_id || equipamento?.espaco_id;
+      const inicio = new Date(reserva.data_inicio).getTime();
+      const fim = new Date(reserva.data_fim).getTime();
+      const intervaloInicio = requestParams.inicio ? new Date(requestParams.inicio.replace(' ', 'T')).getTime() : null;
+      const intervaloFim = requestParams.fim ? new Date(requestParams.fim.replace(' ', 'T')).getTime() : null;
+      if (intervaloInicio !== null && fim <= intervaloInicio) return false;
+      if (intervaloFim !== null && inicio >= intervaloFim) return false;
+      if (requestParams.equipamento_id && Number(reserva.equipamento_id) !== Number(requestParams.equipamento_id)) return false;
+      if (requestParams.espaco_id && Number(laboratorioId) !== Number(requestParams.espaco_id)) return false;
+      if (requestParams.tipo_recurso === 'equipamento' && !reserva.equipamento_id) return false;
+      if (requestParams.tipo_recurso === 'espaco' && (reserva.equipamento_id || !reserva.espaco_id)) return false;
+      if (requestParams.status && reserva.status?.toLowerCase() !== requestParams.status.toLowerCase()) return false;
+      const dataInicioFiltro = requestParams.data_inicio_de
+        ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(requestParams.data_inicio_de)
+          ? `${requestParams.data_inicio_de}T00:00:00`
+          : requestParams.data_inicio_de).getTime()
+        : null;
+      if (dataInicioFiltro !== null && inicio < dataInicioFiltro) return false;
+      const dataFimFiltro = requestParams.data_fim_ate
+        ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(requestParams.data_fim_ate)
+          ? `${requestParams.data_fim_ate}T23:59:59`
+          : requestParams.data_fim_ate).getTime()
+        : null;
+      if (dataFimFiltro !== null && fim > dataFimFiltro) return false;
+      if (requestParams.search) {
+        const term = requestParams.search.toLowerCase();
+        const fields = [
+          reserva.finalidade,
+          reserva.observacoes,
+          reserva.usuario_nome,
+          reserva.equipamento_nome,
+          reserva.espaco_nome
+        ];
+        if (!fields.some((field) => field?.toLowerCase().includes(term))) return false;
+      }
+      return true;
+    });
+    return ok(eventos.map(r => ({
       id: r.id,
       data_inicio: r.data_inicio,
       data_fim: r.data_fim,
       finalidade: r.finalidade,
       status: r.status,
+      grupo_recorrencia_id: r.grupo_recorrencia_id,
+      recorrente: r.recorrente,
+      no_show: r.no_show,
+      equipamento_id: r.equipamento_id || null,
+      espaco_id: r.espaco_id || null,
+      tipo_recurso: r.equipamento_id ? 'equipamento' : r.espaco_id ? 'espaco' : null,
       usuario_nome: r.usuario_nome,
       equipamento_nome: r.equipamento_nome,
       espaco_nome: r.espaco_nome
+        || db.equipamentos.find((item) => Number(item.id) === Number(r.equipamento_id))?.espaco_nome
+        || db.espacos.find((item) => Number(item.id) === Number(r.espaco_id))?.nome
     })));
   }
 

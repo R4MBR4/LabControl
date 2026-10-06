@@ -28,9 +28,28 @@ import {
   Settings2
 } from 'lucide-react';
 
+const dateKeyForLocalDate = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatLocalDateTime = (date) => {
+  const dateKey = dateKeyForLocalDate(date);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${dateKey} ${hours}:${minutes}:${seconds}`;
+};
+
 export default function Reservas() {
   const { user, isAdmin } = useAuth();
   const [reservas, setReservas] = useState([]);
+  const [eventosCalendario, setEventosCalendario] = useState([]);
+  const [calendarioLoading, setCalendarioLoading] = useState(false);
+  const [calendarioError, setCalendarioError] = useState('');
+  const [calendarioRevision, setCalendarioRevision] = useState(0);
   const [espacos, setEspacos] = useState([]);
   const [equipamentos, setEquipamentos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -113,6 +132,7 @@ export default function Reservas() {
       setReservas(resReservas.data || []);
       setEspacos(resEsp.data || []);
       setEquipamentos(resEquip.data || []);
+      setCalendarioRevision((revision) => revision + 1);
     } catch (err) {
       console.error('[Reservas] Erro ao carregar dados:', err);
       setLoadError(err.response?.data?.error || 'Verifique a conexão e tente carregar novamente.');
@@ -445,18 +465,6 @@ export default function Reservas() {
     return days;
   }, [currentDate]);
 
-  // Mapeamento de reservas por data (YYYY-MM-DD)
-  const reservasPorData = useMemo(() => {
-    const map = {};
-    filteredReservas.forEach(r => {
-      if (!r.data_inicio) return;
-      const key = new Date(r.data_inicio).toISOString().slice(0, 10);
-      if (!map[key]) map[key] = [];
-      map[key].push(r);
-    });
-    return map;
-  }, [filteredReservas]);
-
   // Semana atual (7 dias)
   const weekDays = useMemo(() => {
     const curr = new Date(currentDate);
@@ -471,6 +479,115 @@ export default function Reservas() {
     return days;
   }, [currentDate]);
 
+  const calendarRange = useMemo(() => {
+    let start;
+    let end;
+    if (calendarMode === 'mes') {
+      start = new Date(calendarDays[0].date);
+      end = new Date(calendarDays[calendarDays.length - 1].date);
+      end.setDate(end.getDate() + 1);
+    } else if (calendarMode === 'semana') {
+      start = new Date(weekDays[0]);
+      end = new Date(weekDays[6]);
+      end.setDate(end.getDate() + 1);
+    } else {
+      start = new Date(currentDate);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(start);
+      end.setDate(end.getDate() + 1);
+    }
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    return { inicio: start, fim: end };
+  }, [calendarMode, calendarDays, weekDays, currentDate]);
+
+  const filteredCalendarEvents = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return eventosCalendario;
+    return eventosCalendario.filter((reserva) => [
+      reserva.finalidade,
+      reserva.observacoes,
+      reserva.usuario_nome,
+      reserva.equipamento_nome,
+      reserva.equipamento_codigo,
+      reserva.espaco_nome
+    ].some((value) => value?.toLowerCase().includes(term)));
+  }, [eventosCalendario, searchTerm]);
+
+  // Mapeamento de reservas por data (YYYY-MM-DD), incluindo eventos que atravessam dias.
+  const reservasPorData = useMemo(() => {
+    const map = {};
+    filteredCalendarEvents.forEach((reserva) => {
+      const inicio = new Date(reserva.data_inicio);
+      const fim = new Date(reserva.data_fim);
+      if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime())) return;
+
+      const primeiroDia = new Date(inicio);
+      primeiroDia.setHours(0, 0, 0, 0);
+      const dia = new Date(Math.max(primeiroDia.getTime(), calendarRange.inicio.getTime()));
+      while (dia < fim && dia < calendarRange.fim) {
+        if (dia >= calendarRange.inicio) {
+          const key = dateKeyForLocalDate(dia);
+          if (!map[key]) map[key] = [];
+          map[key].push(reserva);
+        }
+        dia.setDate(dia.getDate() + 1);
+      }
+    });
+    return map;
+  }, [filteredCalendarEvents, calendarRange]);
+
+  useEffect(() => {
+    if (viewMode !== 'calendario') return undefined;
+
+    let active = true;
+    const params = {
+      inicio: formatLocalDateTime(calendarRange.inicio),
+      fim: formatLocalDateTime(calendarRange.fim)
+    };
+    if (filtroTipoRecurso !== 'todos') params.tipo_recurso = filtroTipoRecurso;
+    if (filtroEspacoId) params.espaco_id = filtroEspacoId;
+    if (filtroEquipamentoId) params.equipamento_id = filtroEquipamentoId;
+    if (filtroStatus !== 'todas') params.status = filtroStatus;
+    if (filtroDataInicio) params.data_inicio_de = filtroDataInicio;
+    if (filtroDataFim) params.data_fim_ate = filtroDataFim;
+
+    setCalendarioLoading(true);
+    setCalendarioError('');
+    api.get('/reservas/calendario', { params })
+      .then((response) => {
+        if (active) setEventosCalendario(response.data || []);
+      })
+      .catch((err) => {
+        if (active) {
+          setCalendarioError(err.response?.data?.error || 'Não foi possível carregar os eventos do calendário.');
+        }
+      })
+      .finally(() => {
+        if (active) setCalendarioLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    viewMode,
+    calendarRange,
+    filtroTipoRecurso,
+    filtroEspacoId,
+    filtroEquipamentoId,
+    filtroStatus,
+    filtroDataInicio,
+    filtroDataFim,
+    calendarioRevision
+  ]);
+
+  const reservaOcupaHorario = (reserva) => !['cancelada', 'cancelado', 'recusada', 'rejeitada']
+    .includes((reserva.status || '').toLowerCase());
+
+  const tipoRecursoDaReserva = (reserva) => reserva.tipo_recurso
+    || (reserva.equipamento_id || reserva.equipamento_nome ? 'equipamento' : 'espaco');
+
   // Horários para visão Diária (07:00 às 22:00)
   const hoursOfDay = Array.from({ length: 16 }, (_, i) => i + 7);
 
@@ -480,8 +597,6 @@ export default function Reservas() {
            d.getMonth() === today.getMonth() &&
            d.getFullYear() === today.getFullYear();
   };
-
-  const diasSemanaNomes = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -726,6 +841,11 @@ export default function Reservas() {
       {/* VISÃO 1: CALENDÁRIO INTERATIVO */}
       {viewMode === 'calendario' && !loadError && (
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+          {calendarioError && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
+              {calendarioError}
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 border-b border-slate-100">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
@@ -785,6 +905,11 @@ export default function Reservas() {
               </button>
             </div>
           </div>
+          {calendarioLoading && (
+            <div className="text-center text-[11px] text-slate-400" role="status">
+              Atualizando eventos do calendário...
+            </div>
+          )}
 
           {/* MODO MÊS */}
           {calendarMode === 'mes' && (
@@ -801,7 +926,7 @@ export default function Reservas() {
 
               <div className="grid grid-cols-7 gap-1.5">
                 {calendarDays.map((cell, idx) => {
-                  const dateKey = cell.date.toISOString().slice(0, 10);
+                  const dateKey = dateKeyForLocalDate(cell.date);
                   const reservasDoDia = reservasPorData[dateKey] || [];
                   const diaHoje = isToday(cell.date);
 
@@ -855,10 +980,11 @@ export default function Reservas() {
                                   ? 'bg-blue-100 text-blue-800 font-semibold'
                                   : 'bg-teal-50 text-teal-800 hover:bg-teal-100'
                               }`}
-                              title={`${horaInicioRes} - ${r.equipamento_nome || r.espaco_nome} (${r.usuario_nome}) ${isRec ? '[Recorrente]' : ''}`}
+                              title={`${horaInicioRes} - ${r.equipamento_nome || r.espaco_nome} (${r.usuario_nome})${r.espaco_nome && r.equipamento_nome ? ` - Laboratório: ${r.espaco_nome}` : ''} - ${tipoRecursoDaReserva(r) === 'equipamento' ? 'Equipamento' : 'Espaço'} ${isRec ? '[Recorrente]' : ''}`}
                             >
                               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isRec ? 'bg-indigo-500' : 'bg-teal-500'}`}></span>
                               <span className="shrink-0">{horaInicioRes}</span>
+                              <span className="shrink-0 opacity-70">{tipoRecursoDaReserva(r) === 'equipamento' ? 'Eq.' : 'Esp.'}</span>
                               <span className="truncate">{r.equipamento_nome || r.espaco_nome}</span>
                             </button>
                           );
@@ -895,7 +1021,7 @@ export default function Reservas() {
           {calendarMode === 'semana' && (
             <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
               {weekDays.map((d, idx) => {
-                const dateKey = d.toISOString().slice(0, 10);
+                const dateKey = dateKeyForLocalDate(d);
                 const reservasDoDia = reservasPorData[dateKey] || [];
                 const diaHoje = isToday(d);
 
@@ -919,10 +1045,10 @@ export default function Reservas() {
                       </div>
 
                       <div className="space-y-2">
-                        {reservasDoDia.length === 0 ? (
+                        {!reservasDoDia.some(reservaOcupaHorario) && (
                           <p className="text-[11px] text-slate-400 italic text-center py-4">Livre</p>
-                        ) : (
-                          reservasDoDia.map(r => {
+                        )}
+                        {reservasDoDia.map(r => {
                             const status = (r.status || 'confirmada').toLowerCase();
                             const isCanc = status === 'cancelada';
                             const isRec = r.recorrente === 1 || !!r.grupo_recorrencia_id;
@@ -953,13 +1079,18 @@ export default function Reservas() {
                                 </div>
                                 <div className="font-bold text-slate-800 text-[11px] truncate flex items-center gap-1">
                                   {isRec && <Repeat className="w-2.5 h-2.5 text-indigo-500 shrink-0" />}
+                                  <span className="text-[9px] uppercase text-slate-400 shrink-0">
+                                    {tipoRecursoDaReserva(r) === 'equipamento' ? 'Equip.' : 'Espaço'}
+                                  </span>
                                   <span className="truncate">{r.equipamento_nome || r.espaco_nome}</span>
                                 </div>
+                                {r.equipamento_nome && r.espaco_nome && (
+                                  <div className="text-[9px] text-slate-500 truncate">Laboratório: {r.espaco_nome}</div>
+                                )}
                                 <div className="text-[10px] text-slate-500 truncate">{r.usuario_nome}</div>
                               </div>
                             );
-                          })
-                        )}
+                          })}
                       </div>
                     </div>
 
@@ -981,11 +1112,13 @@ export default function Reservas() {
               <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white">
                 {hoursOfDay.map(hour => {
                   const hourStr = String(hour).padStart(2, '0');
-                  const currDayReservas = reservasPorData[currentDate.toISOString().slice(0, 10)] || [];
+                  const currDayReservas = reservasPorData[dateKeyForLocalDate(currentDate)] || [];
                   const reservasDaHora = currDayReservas.filter(r => {
-                    const startH = new Date(r.data_inicio).getHours();
-                    const endH = new Date(r.data_fim).getHours();
-                    return startH <= hour && endH >= hour;
+                    const slotStart = new Date(currentDate);
+                    slotStart.setHours(hour, 0, 0, 0);
+                    const slotEnd = new Date(slotStart);
+                    slotEnd.setHours(slotEnd.getHours() + 1);
+                    return new Date(r.data_inicio) < slotEnd && new Date(r.data_fim) > slotStart;
                   });
 
                   return (
@@ -995,7 +1128,7 @@ export default function Reservas() {
                       </div>
 
                       <div className="flex-1 space-y-2">
-                        {reservasDaHora.length === 0 ? (
+                        {!reservasDaHora.some(reservaOcupaHorario) && (
                           <div className="flex items-center justify-between text-xs text-slate-400">
                             <span>Horário disponível</span>
                             <button
@@ -1009,18 +1142,27 @@ export default function Reservas() {
                               + Agendar
                             </button>
                           </div>
-                        ) : (
-                          reservasDaHora.map(r => (
+                        )}
+                        {reservasDaHora.map(r => {
+                          const isCancelled = (r.status || '').toLowerCase() === 'cancelada';
+                          return (
                             <div
                               key={r.id}
                               onClick={() => {
                                 setReservaSelecionada(r);
                                 setDetalheModalOpen(true);
                               }}
-                              className="p-3 bg-teal-50/60 border border-teal-200 rounded-xl cursor-pointer hover:bg-teal-50 transition flex items-center justify-between"
+                              className={`p-3 border rounded-xl cursor-pointer transition flex items-center justify-between ${
+                                isCancelled
+                                  ? 'bg-rose-50 border-rose-200 opacity-70'
+                                  : 'bg-teal-50/60 border-teal-200 hover:bg-teal-50'
+                              }`}
                             >
                               <div className="space-y-0.5">
                                 <div className="flex items-center gap-2">
+                                  <span className="text-[9px] uppercase text-slate-400">
+                                    {tipoRecursoDaReserva(r) === 'equipamento' ? 'Equipamento' : 'Espaço'}
+                                  </span>
                                   <span className="font-bold text-slate-800 text-xs">
                                     {r.equipamento_nome || r.espaco_nome}
                                   </span>
@@ -1030,20 +1172,25 @@ export default function Reservas() {
                                       Recorrente
                                     </span>
                                   )}
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-600 text-white font-bold uppercase">
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                                    isCancelled ? 'bg-rose-100 text-rose-700' : 'bg-teal-600 text-white'
+                                  }`}>
                                     {r.status}
                                   </span>
                                 </div>
                                 <p className="text-xs text-slate-600">
                                   Solicitante: <strong>{r.usuario_nome}</strong> | Finalidade: {r.finalidade || 'Uso acadêmico'}
                                 </p>
+                                {r.equipamento_nome && r.espaco_nome && (
+                                  <p className="text-[10px] text-slate-500">Laboratório: {r.espaco_nome}</p>
+                                )}
                               </div>
                               <div className="text-right font-mono text-xs text-slate-500">
                                 {new Date(r.data_inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - {new Date(r.data_fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                               </div>
                             </div>
-                          ))
-                        )}
+                          );
+                        })}
                       </div>
                     </div>
                   );

@@ -44,7 +44,19 @@ async function list(req, res) {
 
 async function getCalendario(req, res) {
   try {
-    const { inicio, fim, espaco_id, equipamento_id, mes, ano } = req.query;
+    const {
+      inicio,
+      fim,
+      espaco_id,
+      equipamento_id,
+      mes,
+      ano,
+      tipo_recurso,
+      status,
+      data_inicio_de,
+      data_fim_ate,
+      search
+    } = req.query;
     let dataInicio = inicio;
     let dataFim = fim;
 
@@ -62,7 +74,12 @@ async function getCalendario(req, res) {
       inicio: dataInicio,
       fim: dataFim,
       espaco_id: espaco_id || null,
-      equipamento_id: equipamento_id || null
+      equipamento_id: equipamento_id || null,
+      tipo_recurso: tipo_recurso || null,
+      status: status || null,
+      data_inicio_de: data_inicio_de || null,
+      data_fim_ate: data_fim_ate || null,
+      search: search || null
     });
 
     res.json(eventos);
