@@ -249,9 +249,9 @@ async function deleteEquipamento(id, usuarioId = null, motivo = null) {
   };
 }
 
-async function updateStatus(id, newStatus) {
+async function updateStatus(id, newStatus, executor) {
   const statusCol = await resolveColumn(TABLE, ['status', 'situacao', 'estado']);
-  return update(TABLE, id, { [statusCol]: newStatus });
+  return update(TABLE, id, { [statusCol]: newStatus }, executor);
 }
 
 /**

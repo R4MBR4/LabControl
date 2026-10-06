@@ -5,7 +5,7 @@ O **LabControl** é um sistema web full-stack desenvolvido para controle, agenda
 > ⚠️ **Importante sobre o Banco de Dados:**
 > Este sistema foi desenvolvido para **consumir o banco de dados MySQL existente** (`labcontrol`) via variáveis de ambiente.
 > Scripts SQL de schema e evolução estão em `database/`. Eles não são executados automaticamente pelo servidor. `database/schema.sql` recria as tabelas-base e contém comandos `DROP`; **não o execute sobre uma base com dados que devam ser preservados**.
-> Para uma base existente, aplique as migrações necessárias de forma controlada. A configuração administrativa da tolerância de no-show requer `database/migrations/07_configuracao_no_show.sql`.
+> Para uma base existente, aplique as migrações necessárias de forma controlada. A configuração administrativa da tolerância de no-show requer `database/migrations/07_configuracao_no_show.sql`; o vínculo entre ordens de manutenção e ocorrências requer `database/migrations/08_vinculo_ocorrencia_manutencao.sql`.
 > Tabelas consumidas: `usuario` · `espaco` · `equipamento` · `reserva` · `utilizacao` · `ocorrencia` · `manutencao` · `consumivel` · `capacitacao` · `inventario` · `inventario_item` · `configuracao_sistema`
 
 ---
@@ -42,7 +42,7 @@ LabControl/
 │   │   └── dashboardController.js
 │   ├── middlewares/
 │   │   └── auth.js            # Validação de JWT e permissão por perfil
-│   ├── models/                # Camada DAO preparada para as 9 tabelas
+│   ├── models/                # Camada DAO por entidade do sistema
 │   ├── routes/                # Rotas RESTful completas
 │   ├── .env.example
 │   ├── package.json
@@ -92,13 +92,13 @@ LabControl/
    Equipamentos que possuem a flag `exige_capacitacao` só aceitam reserva ou check-in se o usuário possuir habilitação válida registrada na tabela `capacitacao`.
 
 4. **Registro Obrigatório da Condição no Check-out:**
-   A finalização do check-out exige formalmente o relato do estado de conservação do equipamento devolvido. Se for relatada avaria, o sistema registra automaticamente a ocorrência e direciona o equipamento para manutenção.
+   A finalização do check-out exige formalmente o relato do estado de conservação do equipamento devolvido. Se for relatada avaria, a evidência é obrigatória e o check-out, a ocorrência e o bloqueio do equipamento são persistidos na mesma transação.
 
 5. **Estoque de Consumíveis Não-Negativo:**
    Validação atômica impede que saídas de estoque tornem o saldo negativo. Alertas visuais são emitidos sempre que `quantidade <= quantidade_minima`.
 
 6. **Ciclo Completo de Manutenção:**
-   O início da manutenção altera o status do equipamento para `manutencao`. Ao concluir a ordem de serviço com laudo técnico, o equipamento é automaticamente retornado ao status `disponivel`.
+   O encaminhamento administrativo cria uma ordem de serviço vinculada à ocorrência. A conclusão exige laudo técnico; o equipamento só retorna a `disponivel` quando não há outra manutenção aberta nem inativação ativa. Ocorrências e ordens não podem ser excluídas pela API.
 
 ---
 

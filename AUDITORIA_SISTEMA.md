@@ -143,9 +143,10 @@ LabControl/
 
 ---
 
-## 5. Estado após os blocos de reservas e dashboard
+## 5. Estado após os blocos de reservas, dashboard e ocorrências/manutenção
 
 * **Tolerância de no-show:** Configuração administrativa persistida em `configuracao_sistema`; aplicar `database/migrations/07_configuracao_no_show.sql` em bancos existentes.
 * **Dashboard administrativo:** KPIs de equipamentos, espaços, reservas, ocorrências, manutenção e estoque; utilização atual; alertas operacionais e gráficos compactos. Erros da consulta são reportados, sem valores demonstrativos substituindo métricas reais.
-* **Validação realizada:** build de produção do frontend, verificação de sintaxe do backend e testes de contrato com resultados simulados. A integração com uma base MySQL configurada não foi executada nesta etapa.
-* **Próximo bloco recomendado — Ocorrências e manutenção:** consolidar o fluxo de evidência e decisão, garantir falha explícita se o check-out não conseguir registrar a ocorrência e preservar o histórico administrativo.
+* **Ocorrências e manutenção:** Check-out com avaria é transacional e exige evidência; encaminhamento cria ordem vinculada; laudo é obrigatório para concluir; o equipamento só é liberado sem outras ordens abertas e sem inativação; API preserva ocorrências e ordens sem exclusão física. Aplicar também `database/migrations/08_vinculo_ocorrencia_manutencao.sql` em bancos existentes.
+* **Validação realizada:** build de produção do frontend, verificação de sintaxe do backend e testes direcionados com dependências de banco simuladas. A integração com uma base MySQL configurada não foi executada nesta etapa.
+* **Próximo bloco recomendado — Histórico e auditoria:** registrar autoria e timestamp das alterações administrativas relevantes e completar a trilha unificada exibida nos detalhes do equipamento.

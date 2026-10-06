@@ -47,7 +47,7 @@ async function getAllUtilizacoes(filters = {}) {
   return rows;
 }
 
-async function getUtilizacaoById(id) {
+async function getUtilizacaoById(id, executor = pool, lock = false) {
   const pk = await getPrimaryKey(TABLE);
   const userPk = await getPrimaryKey('usuario');
   const equipPk = await getPrimaryKey('equipamento');
@@ -65,8 +65,9 @@ async function getUtilizacaoById(id) {
     LEFT JOIN \`equipamento\` e ON u.\`${fkEquip}\` = e.\`${equipPk}\`
     WHERE u.\`${pk}\` = ?
     LIMIT 1
+    ${lock ? 'FOR UPDATE' : ''}
   `;
-  const [rows] = await pool.query(sql, [id]);
+  const [rows] = await executor.query(sql, [id]);
   return rows[0] || null;
 }
 
@@ -74,12 +75,12 @@ async function getUtilizacaoById(id) {
  * Busca utilização ativa (em_uso) para um determinado equipamento ou usuário
  */
 async function getActiveUtilizacaoByEquipamento(equipId) {
+  const pk = await getPrimaryKey(TABLE);
   const fkEquip = await resolveColumn(TABLE, ['equipamento_id', 'id_equipamento']);
   const sql = `
     SELECT * FROM \`${TABLE}\`
-    WHERE \`${fkEquip}\` = ? 
-      AND (status = 'em_uso' OR data_checkout IS NULL OR checkout IS NULL)
-    ORDER BY id DESC LIMIT 1
+    WHERE \`${fkEquip}\` = ? AND LOWER(COALESCE(status, '')) = 'em_uso'
+    ORDER BY \`${pk}\` DESC LIMIT 1
   `;
   const [rows] = await pool.query(sql, [equipId]);
   return rows[0] || null;
@@ -106,7 +107,7 @@ async function createCheckin(data) {
 /**
  * Checkout com registro obrigatório da condição do equipamento
  */
-async function executeCheckout(id, checkoutData) {
+async function executeCheckout(id, checkoutData, executor = pool) {
   const cols = await getTableColumns(TABLE);
   const data = { ...checkoutData };
 
@@ -117,8 +118,8 @@ async function executeCheckout(id, checkoutData) {
     data.status = 'finalizado';
   }
 
-  await update(TABLE, id, data);
-  return getUtilizacaoById(id);
+  await update(TABLE, id, data, executor);
+  return getUtilizacaoById(id, executor);
 }
 
 module.exports = {

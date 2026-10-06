@@ -201,6 +201,7 @@ CREATE TABLE `ocorrencia` (
 CREATE TABLE `manutencao` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `equipamento_id` INT NOT NULL,
+  `ocorrencia_id` INT NULL,
   `tipo` VARCHAR(30) NOT NULL DEFAULT 'corretiva',
   `descricao` TEXT NOT NULL,
   `data_inicio` DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -211,9 +212,13 @@ CREATE TABLE `manutencao` (
   `laudo_tecnico` TEXT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_manutencao_status` (`status`),
+  INDEX `idx_manutencao_ocorrencia` (`ocorrencia_id`),
   CONSTRAINT `fk_manutencao_equipamento`
     FOREIGN KEY (`equipamento_id`) REFERENCES `equipamento` (`id`)
-    ON DELETE RESTRICT ON UPDATE CASCADE
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_manutencao_ocorrencia`
+    FOREIGN KEY (`ocorrencia_id`) REFERENCES `ocorrencia` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------

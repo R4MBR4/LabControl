@@ -48,7 +48,7 @@ async function getAllOcorrencias(filters = {}) {
   return rows;
 }
 
-async function getOcorrenciaById(id) {
+async function getOcorrenciaById(id, executor = pool, lock = false) {
   const pk = await getPrimaryKey(TABLE);
   const userPk = await getPrimaryKey('usuario');
   const equipPk = await getPrimaryKey('equipamento');
@@ -68,12 +68,13 @@ async function getOcorrenciaById(id) {
     LEFT JOIN \`espaco\` esp ON o.espaco_id = esp.id
     WHERE o.\`${pk}\` = ?
     LIMIT 1
+    ${lock ? 'FOR UPDATE' : ''}
   `;
-  const [rows] = await pool.query(sql, [id]);
+  const [rows] = await executor.query(sql, [id]);
   return rows[0] || null;
 }
 
-async function createOcorrencia(data) {
+async function createOcorrencia(data, executor = pool) {
   const cols = await getTableColumns(TABLE);
   const payload = { ...data };
 
@@ -86,13 +87,13 @@ async function createOcorrencia(data) {
     payload.status = 'aberta';
   }
 
-  const id = await insert(TABLE, payload);
-  return getOcorrenciaById(id);
+  const id = await insert(TABLE, payload, executor);
+  return getOcorrenciaById(id, executor);
 }
 
-async function updateOcorrencia(id, data) {
-  await update(TABLE, id, data);
-  return getOcorrenciaById(id);
+async function updateOcorrencia(id, data, executor = pool) {
+  await update(TABLE, id, data, executor);
+  return getOcorrenciaById(id, executor);
 }
 
 async function deleteOcorrencia(id) {

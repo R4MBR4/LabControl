@@ -449,13 +449,17 @@ export default function Ocorrencias() {
                     <input
                       type="checkbox"
                       checked={decisaoForm.encaminhar_manutencao}
-                      onChange={(e) => setDecisaoForm({ ...decisaoForm, encaminhar_manutencao: e.target.checked })}
+                      onChange={(e) => setDecisaoForm({
+                        ...decisaoForm,
+                        encaminhar_manutencao: e.target.checked,
+                        status: e.target.checked ? 'em_analise' : decisaoForm.status
+                      })}
                       className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 border-slate-300"
                     />
                     <div className="text-xs">
-                      <span className="font-semibold text-slate-800">Bloquear e encaminhar equipamento para Manutenção</span>
+                      <span className="font-semibold text-slate-800">Criar ordem e encaminhar equipamento para Manutenção</span>
                       <p className="text-slate-500 text-[11px]">
-                        Atualiza o status do equipamento imediatamente para 'manutencao'.
+                        Cria uma ordem vinculada à ocorrência e mantém o equipamento bloqueado até a conclusão.
                       </p>
                     </div>
                   </label>
