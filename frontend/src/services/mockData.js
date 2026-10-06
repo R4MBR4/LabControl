@@ -512,6 +512,82 @@ export function handleMockRequest(method, url, data) {
     })));
   }
 
+  if (cleanUrl === '/reservas/recorrente' && method.toUpperCase() === 'POST') {
+    const esp = db.espacos.find(s => s.id === Number(data.espaco_id));
+    const eq = data.equipamento_id ? db.equipamentos.find(e => e.id === Number(data.equipamento_id)) : null;
+    const storedUser = localStorage.getItem('labcontrol_user');
+    const u = storedUser ? JSON.parse(storedUser) : db.usuarios[0];
+    const grupoId = 'rec_mock_' + Date.now();
+
+    const criadas = [];
+    // Gera mock de 4 semanas
+    for (let w = 0; w < 4; w++) {
+      const dtI = new Date(Date.now() + (w * 7 + 1) * 86400000);
+      const dtF = new Date(dtI.getTime() + 7200000);
+      const item = {
+        id: Date.now() + w,
+        usuario_id: u.id,
+        usuario_nome: u.nome,
+        espaco_id: Number(data.espaco_id) || (esp ? esp.id : null),
+        espaco_nome: esp ? esp.nome : 'Espaço Reservado',
+        equipamento_id: data.equipamento_id ? Number(data.equipamento_id) : null,
+        equipamento_nome: eq ? eq.nome : null,
+        data_inicio: dtI.toISOString(),
+        data_fim: dtF.toISOString(),
+        finalidade: data.finalidade || 'Série de Aulas / Recorrente',
+        status: 'confirmada',
+        recorrente: 1,
+        grupo_recorrencia_id: grupoId
+      };
+      db.reservas.unshift(item);
+      criadas.push(item.id);
+    }
+    saveStorage(db);
+    return ok({ success: true, grupo_recorrencia_id: grupoId, totalCriadas: criadas.length, reservasCriadas: criadas });
+  }
+
+  if (cleanUrl.match(/\/reservas\/\d+\/cancelar-recorrencia/)) {
+    const id = Number(cleanUrl.split('/')[2]);
+    const tipo = data?.tipo || 'apenas_esta';
+    const res = db.reservas.find(r => Number(r.id) === id);
+    if (!res) return { data: { error: 'Reserva não encontrada' }, status: 404 };
+
+    if (tipo === 'apenas_esta' || !res.grupo_recorrencia_id) {
+      res.status = 'cancelada';
+    } else if (tipo === 'proximas') {
+      db.reservas.forEach(r => {
+        if (r.grupo_recorrencia_id === res.grupo_recorrencia_id && new Date(r.data_inicio) >= new Date(res.data_inicio)) {
+          r.status = 'cancelada';
+        }
+      });
+    } else if (tipo === 'toda_serie') {
+      db.reservas.forEach(r => {
+        if (r.grupo_recorrencia_id === res.grupo_recorrencia_id) {
+          r.status = 'cancelada';
+        }
+      });
+    }
+    saveStorage(db);
+    return ok({ message: 'Cancelamento efetuado com sucesso', tipo });
+  }
+
+  if (cleanUrl.match(/\/reservas\/\d+\/no-show/)) {
+    const id = Number(cleanUrl.split('/')[2]);
+    const res = db.reservas.find(r => Number(r.id) === id);
+    if (res) {
+      res.no_show = 1;
+      res.status = 'no_show';
+      res.no_show_at = new Date().toISOString();
+      saveStorage(db);
+      return ok({ message: 'No-show registrado com sucesso', reserva: res });
+    }
+    return { data: { error: 'Reserva não encontrada' }, status: 404 };
+  }
+
+  if (cleanUrl === '/reservas/verificar-no-shows') {
+    return ok({ message: 'Verificação concluída. 0 reservas marcadas.', totalMarcados: 0 });
+  }
+
   // Cancelar reserva explicitamente: /reservas/:id/cancelar
   if (cleanUrl.match(/\/reservas\/\d+\/cancelar/)) {
     const id = Number(cleanUrl.split('/')[2]);

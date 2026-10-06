@@ -21,7 +21,10 @@ import {
   List,
   Eye,
   RotateCcw,
-  Info
+  Info,
+  Repeat,
+  AlertTriangle,
+  Settings2
 } from 'lucide-react';
 
 export default function Reservas() {
@@ -43,7 +46,7 @@ export default function Reservas() {
   const [filtroTipoRecurso, setFiltroTipoRecurso] = useState('todos'); // 'todos', 'equipamento', 'espaco'
   const [filtroEspacoId, setFiltroEspacoId] = useState('');
   const [filtroEquipamentoId, setFiltroEquipamentoId] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState('todas'); // 'todas', 'confirmada', 'em_andamento', 'cancelada'
+  const [filtroStatus, setFiltroStatus] = useState('todas'); // 'todas', 'confirmada', 'em_andamento', 'cancelada', 'no_show'
   const [filtroDataInicio, setFiltroDataInicio] = useState('');
   const [filtroDataFim, setFiltroDataFim] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
@@ -53,6 +56,19 @@ export default function Reservas() {
   const [detalheModalOpen, setDetalheModalOpen] = useState(false);
   const [reservaSelecionada, setReservaSelecionada] = useState(null);
   const [tipoRecurso, setTipoRecurso] = useState('equipamento'); // 'equipamento' ou 'espaco'
+
+  // Recorrência (Bloco 08)
+  const [isRecorrente, setIsRecorrente] = useState(false);
+  const [diasSemana, setDiasSemana] = useState([1, 3]); // Padrão: Segunda e Quarta
+  const [dataFimSerie, setDataFimSerie] = useState('');
+  const [horaInicio, setHoraInicio] = useState('08:00');
+  const [horaFim, setHoraFim] = useState('10:00');
+  const [toleranciaNoShow, setToleranciaNoShow] = useState(15);
+
+  // Cancelamento de série recorrente (Bloco 08)
+  const [cancelRecModalOpen, setCancelRecModalOpen] = useState(false);
+  const [reservaParaCancelar, setReservaParaCancelar] = useState(null);
+  const [tipoCancelamento, setTipoCancelamento] = useState('apenas_esta'); // 'apenas_esta', 'proximas', 'toda_serie'
 
   const [formData, setFormData] = useState({
     equipamento_id: '',
@@ -134,6 +150,15 @@ export default function Reservas() {
     end.setHours(end.getHours() + 2);
     const endStr = end.toISOString().slice(0, 16);
 
+    // Data padrão para fim de série (4 semanas no futuro)
+    const fimSerieDate = new Date(now);
+    fimSerieDate.setDate(fimSerieDate.getDate() + 28);
+    setDataFimSerie(fimSerieDate.toISOString().slice(0, 10));
+
+    setHoraInicio(startStr.slice(11, 16));
+    setHoraFim(endStr.slice(11, 16));
+    setIsRecorrente(false);
+
     setFormData({
       equipamento_id: equipamentos[0]?.id || equipamentos[0]?.id_equipamento || '',
       espaco_id: espacos[0]?.id || espacos[0]?.id_espaco || '',
@@ -146,27 +171,68 @@ export default function Reservas() {
     setModalOpen(true);
   };
 
+  const toggleDiaSemana = (dia) => {
+    if (diasSemana.includes(dia)) {
+      if (diasSemana.length === 1) return; // Mínimo 1 dia
+      setDiasSemana(diasSemana.filter(d => d !== dia));
+    } else {
+      setDiasSemana([...diasSemana, dia].sort());
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
     try {
-      const payload = {
-        data_inicio: formData.data_inicio,
-        data_fim: formData.data_fim,
-        finalidade: formData.finalidade,
-        observacoes: formData.observacoes,
-        equipamento_id: tipoRecurso === 'equipamento' ? formData.equipamento_id : null,
-        espaco_id: tipoRecurso === 'espaco' ? formData.espaco_id : null
-      };
+      if (isRecorrente) {
+        // Bloco 08: Criação de série recorrente com verificação em todas as ocorrências
+        const payload = {
+          equipamento_id: tipoRecurso === 'equipamento' ? formData.equipamento_id : null,
+          espaco_id: tipoRecurso === 'espaco' ? formData.espaco_id : null,
+          finalidade: formData.finalidade,
+          observacoes: formData.observacoes,
+          dias_semana: diasSemana,
+          data_inicio_serie: formData.data_inicio.slice(0, 10),
+          data_fim_serie: dataFimSerie,
+          hora_inicio: horaInicio,
+          hora_fim: horaFim,
+          tolerancia_no_show_min: Number(toleranciaNoShow) || 15
+        };
 
-      await api.post('/reservas', payload);
-      setSuccess('Reserva confirmada com sucesso! Sem conflitos de horário identificados.');
+        const res = await api.post('/reservas/recorrente', payload);
+        setSuccess(`Série recorrente criada com sucesso! ${res.data.totalCriadas} ocorrências confirmadas sem conflitos.`);
+      } else {
+        // Reserva simples (Bloco 07)
+        const payload = {
+          data_inicio: formData.data_inicio,
+          data_fim: formData.data_fim,
+          finalidade: formData.finalidade,
+          observacoes: formData.observacoes,
+          equipamento_id: tipoRecurso === 'equipamento' ? formData.equipamento_id : null,
+          espaco_id: tipoRecurso === 'espaco' ? formData.espaco_id : null
+        };
+
+        await api.post('/reservas', payload);
+        setSuccess('Reserva confirmada com sucesso! Sem conflitos de horário identificados.');
+      }
+
       setModalOpen(false);
       loadData();
       setTimeout(() => setSuccess(''), 5000);
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao realizar reserva');
+    }
+  };
+
+  const handleInitiateCancel = (r) => {
+    const isRec = r.recorrente === 1 || !!r.grupo_recorrencia_id;
+    if (isRec) {
+      setReservaParaCancelar(r);
+      setTipoCancelamento('apenas_esta');
+      setCancelRecModalOpen(true);
+    } else {
+      handleCancel(r.id || r.id_reserva);
     }
   };
 
@@ -186,6 +252,59 @@ export default function Reservas() {
       setError(err.response?.data?.error || err.message || 'Erro ao cancelar reserva');
     } finally {
       setCancellingId(null);
+    }
+  };
+
+  const handleConfirmCancelRecorrente = async () => {
+    if (!reservaParaCancelar) return;
+    try {
+      const id = reservaParaCancelar.id || reservaParaCancelar.id_reserva;
+      setCancellingId(id);
+      setError('');
+      const res = await api.put(`/reservas/${id}/cancelar-recorrencia`, { tipo: tipoCancelamento });
+      const msg = tipoCancelamento === 'apenas_esta'
+        ? 'Ocorrência individual cancelada com sucesso! As demais reservas da série foram preservadas.'
+        : tipoCancelamento === 'proximas'
+        ? `Esta e ${res.data.afetadas - 1} ocorrência(s) futuras canceladas.`
+        : `Toda a série recorrente (${res.data.afetadas} ocorrências) foi cancelada.`;
+
+      setSuccess(msg);
+      setCancelRecModalOpen(false);
+      setReservaParaCancelar(null);
+      if (detalheModalOpen) setDetalheModalOpen(false);
+      await loadData();
+      setTimeout(() => setSuccess(''), 5000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erro ao cancelar ocorrência recorrente');
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
+  const handleMarcarNoShow = async (id) => {
+    if (!window.confirm('Deseja registrar No-Show para esta reserva? O histórico será preservado para relatórios e indicadores.')) return;
+    try {
+      await api.post(`/reservas/${id}/no-show`);
+      setSuccess('No-Show registrado com sucesso! O histórico foi preservado para indicadores.');
+      if (detalheModalOpen) setDetalheModalOpen(false);
+      await loadData();
+      setTimeout(() => setSuccess(''), 4000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erro ao registrar no-show');
+    }
+  };
+
+  const handleVerificarNoShows = async () => {
+    try {
+      setLoading(true);
+      const res = await api.post('/reservas/verificar-no-shows', { tolerancia: 15 });
+      setSuccess(res.data.message || 'Verificação de no-shows concluída com sucesso!');
+      await loadData();
+      setTimeout(() => setSuccess(''), 5000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erro ao verificar no-shows');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -250,7 +369,7 @@ export default function Reservas() {
       days.push({ date: d, isCurrentMonth: true });
     }
 
-    // Dias do próximo mês para completar 35 ou 42 células
+    // Dias do próximo mês para completar grade
     const remaining = (7 - (days.length % 7)) % 7;
     for (let i = 1; i <= remaining; i++) {
       const d = new Date(year, month + 1, i);
@@ -276,7 +395,7 @@ export default function Reservas() {
   const weekDays = useMemo(() => {
     const curr = new Date(currentDate);
     const day = curr.getDay();
-    const diff = curr.getDate() - day; // domingo como início
+    const diff = curr.getDate() - day;
 
     const days = [];
     for (let i = 0; i < 7; i++) {
@@ -296,6 +415,8 @@ export default function Reservas() {
            d.getFullYear() === today.getFullYear();
   };
 
+  const diasSemanaNomes = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       {/* Cabeçalho da Página */}
@@ -303,10 +424,10 @@ export default function Reservas() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <CalendarCheck className="w-6 h-6 text-teal-600" />
-            Gestão de Reservas e Agendamentos
+            Gestão de Reservas e Recorrência
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Controle de ocupação com calendário dinâmico, busca avançada e prevenção de conflitos
+            Agendamentos com prevenção de sobreposição, séries periódicas e tolerância de no-show
           </p>
         </div>
 
@@ -322,7 +443,7 @@ export default function Reservas() {
               }`}
             >
               <List className="w-3.5 h-3.5" />
-              Tabela / Lista
+              Tabela
             </button>
             <button
               onClick={() => setViewMode('calendario')}
@@ -336,6 +457,18 @@ export default function Reservas() {
               Calendário
             </button>
           </div>
+
+          {/* Botão Admin de Varredura de No-Show */}
+          {isAdmin && (
+            <button
+              onClick={handleVerificarNoShows}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold transition cursor-pointer"
+              title="Identifica reservas passadas sem check-in além da tolerância de 15 minutos"
+            >
+              <Clock className="w-3.5 h-3.5 text-amber-600" />
+              Verificar No-Shows
+            </button>
+          )}
 
           <button
             onClick={() => handleOpenModal()}
@@ -482,12 +615,13 @@ export default function Reservas() {
                 <option value="pendente">Pendente</option>
                 <option value="concluida">Concluída</option>
                 <option value="cancelada">Cancelada</option>
+                <option value="no_show">No-Show</option>
               </select>
             </div>
 
-            {/* Período De / Até */}
+            {/* Período */}
             <div>
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Período A Partir De</label>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">A Partir De</label>
               <input
                 type="date"
                 value={filtroDataInicio}
@@ -502,7 +636,6 @@ export default function Reservas() {
       {/* VISÃO 1: CALENDÁRIO INTERATIVO */}
       {viewMode === 'calendario' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-          {/* Barra Superior do Calendário */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 border-b border-slate-100">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
@@ -535,7 +668,6 @@ export default function Reservas() {
               </h2>
             </div>
 
-            {/* Seletor de modo do Calendário: Mês, Semana, Dia */}
             <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600">
               <button
                 onClick={() => setCalendarMode('mes')}
@@ -567,7 +699,6 @@ export default function Reservas() {
           {/* MODO MÊS */}
           {calendarMode === 'mes' && (
             <div className="space-y-1">
-              {/* Dias da Semana */}
               <div className="grid grid-cols-7 gap-1 text-center font-bold text-[11px] text-slate-400 uppercase py-2">
                 <span>Dom</span>
                 <span>Seg</span>
@@ -578,7 +709,6 @@ export default function Reservas() {
                 <span>Sáb</span>
               </div>
 
-              {/* Grade de Dias */}
               <div className="grid grid-cols-7 gap-1.5">
                 {calendarDays.map((cell, idx) => {
                   const dateKey = cell.date.toISOString().slice(0, 10);
@@ -611,12 +741,14 @@ export default function Reservas() {
                         )}
                       </div>
 
-                      {/* Lista de Reservas neste Dia */}
                       <div className="space-y-1 my-1 overflow-y-auto max-h-[65px] scrollbar-thin">
                         {reservasDoDia.slice(0, 3).map((r) => {
                           const status = (r.status || 'confirmada').toLowerCase();
                           const isCanc = status === 'cancelada';
-                          const horaInicio = r.data_inicio ? new Date(r.data_inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+                          const isRec = r.recorrente === 1 || !!r.grupo_recorrencia_id;
+                          const isNoShow = r.no_show === 1;
+                          const horaInicioRes = r.data_inicio ? new Date(r.data_inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+
                           return (
                             <button
                               key={r.id}
@@ -627,14 +759,16 @@ export default function Reservas() {
                               className={`w-full text-left px-1.5 py-0.5 rounded text-[10px] font-medium truncate flex items-center gap-1 transition ${
                                 isCanc
                                   ? 'bg-rose-50 text-rose-500 line-through'
+                                  : isNoShow
+                                  ? 'bg-amber-100 text-amber-900 font-semibold'
                                   : status === 'em_andamento'
                                   ? 'bg-blue-100 text-blue-800 font-semibold'
                                   : 'bg-teal-50 text-teal-800 hover:bg-teal-100'
                               }`}
-                              title={`${horaInicio} - ${r.equipamento_nome || r.espaco_nome} (${r.usuario_nome})`}
+                              title={`${horaInicioRes} - ${r.equipamento_nome || r.espaco_nome} (${r.usuario_nome}) ${isRec ? '[Recorrente]' : ''}`}
                             >
-                              <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-teal-500"></span>
-                              <span className="shrink-0">{horaInicio}</span>
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isRec ? 'bg-indigo-500' : 'bg-teal-500'}`}></span>
+                              <span className="shrink-0">{horaInicioRes}</span>
                               <span className="truncate">{r.equipamento_nome || r.espaco_nome}</span>
                             </button>
                           );
@@ -701,6 +835,8 @@ export default function Reservas() {
                           reservasDoDia.map(r => {
                             const status = (r.status || 'confirmada').toLowerCase();
                             const isCanc = status === 'cancelada';
+                            const isRec = r.recorrente === 1 || !!r.grupo_recorrencia_id;
+                            const isNoShow = r.no_show === 1;
                             const horaI = new Date(r.data_inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
                             const horaF = new Date(r.data_fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
@@ -720,13 +856,14 @@ export default function Reservas() {
                                 <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
                                   <span className="font-mono font-bold text-teal-700">{horaI} - {horaF}</span>
                                   <span className={`px-1.5 py-0.2 rounded font-bold uppercase text-[9px] ${
-                                    isCanc ? 'text-rose-600' : 'text-emerald-700'
+                                    isCanc ? 'text-rose-600' : isNoShow ? 'text-amber-700' : 'text-emerald-700'
                                   }`}>
-                                    {status}
+                                    {isNoShow ? 'No-Show' : status}
                                   </span>
                                 </div>
-                                <div className="font-bold text-slate-800 text-[11px] truncate">
-                                  {r.equipamento_nome || r.espaco_nome}
+                                <div className="font-bold text-slate-800 text-[11px] truncate flex items-center gap-1">
+                                  {isRec && <Repeat className="w-2.5 h-2.5 text-indigo-500 shrink-0" />}
+                                  <span className="truncate">{r.equipamento_nome || r.espaco_nome}</span>
                                 </div>
                                 <div className="text-[10px] text-slate-500 truncate">{r.usuario_nome}</div>
                               </div>
@@ -797,6 +934,12 @@ export default function Reservas() {
                                   <span className="font-bold text-slate-800 text-xs">
                                     {r.equipamento_nome || r.espaco_nome}
                                   </span>
+                                  {r.recorrente === 1 && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-bold flex items-center gap-1 border border-indigo-200">
+                                      <Repeat className="w-2.5 h-2.5" />
+                                      Recorrente
+                                    </span>
+                                  )}
                                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-600 text-white font-bold uppercase">
                                     {r.status}
                                   </span>
@@ -854,6 +997,8 @@ export default function Reservas() {
                       const isPrivileged = isAdmin || userRole === 'professor' || userRole === 'docente';
                       const isOwner = Number(r.usuario_id || r.id_usuario) === Number(user?.id);
                       const canCancel = (isOwner || isPrivileged) && status !== 'cancelada';
+                      const isRec = r.recorrente === 1 || !!r.grupo_recorrencia_id;
+                      const isNoShow = r.no_show === 1;
 
                       return (
                         <tr key={resId} className="hover:bg-slate-50/50 transition">
@@ -863,9 +1008,17 @@ export default function Reservas() {
                                 {r.equipamento_nome ? <Cpu className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
                               </div>
                               <div>
-                                <span className="font-semibold text-slate-800">
-                                  {r.equipamento_nome || r.espaco_nome || `Recurso #${resId}`}
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-semibold text-slate-800">
+                                    {r.equipamento_nome || r.espaco_nome || `Recurso #${resId}`}
+                                  </span>
+                                  {isRec && (
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200" title="Reserva integrante de série periódica">
+                                      <Repeat className="w-2.5 h-2.5" />
+                                      Série
+                                    </span>
+                                  )}
+                                </div>
                                 {r.equipamento_codigo && (
                                   <span className="block font-mono text-[10px] text-slate-400">
                                     UFPI: {r.equipamento_codigo} {r.equipamento_codigo_labcontrol ? `| LC: ${r.equipamento_codigo_labcontrol}` : ''}
@@ -895,15 +1048,18 @@ export default function Reservas() {
                           </td>
 
                           <td className="px-5 py-3.5">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                              status === 'confirmada' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                              status === 'cancelada' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                              status === 'em_andamento' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                              status === 'pendente' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                              'bg-slate-100 text-slate-600'
-                            }`}>
-                              {status}
-                            </span>
+                            <div className="flex flex-col gap-1">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                isNoShow ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                                status === 'confirmada' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                status === 'cancelada' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                                status === 'em_andamento' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                status === 'pendente' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                'bg-slate-100 text-slate-600'
+                              }`}>
+                                {isNoShow ? 'No-Show' : status}
+                              </span>
+                            </div>
                           </td>
 
                           <td className="px-5 py-3.5 text-right">
@@ -913,7 +1069,7 @@ export default function Reservas() {
                                   setReservaSelecionada(r);
                                   setDetalheModalOpen(true);
                                 }}
-                                className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
+                                className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition cursor-pointer"
                                 title="Ver detalhes completos"
                               >
                                 <Eye className="w-4 h-4" />
@@ -925,13 +1081,13 @@ export default function Reservas() {
                                 </span>
                               ) : canCancel ? (
                                 <button
-                                  onClick={() => handleCancel(resId)}
+                                  onClick={() => handleInitiateCancel(r)}
                                   disabled={cancellingId === resId}
                                   className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 transition cursor-pointer disabled:opacity-50"
-                                  title="Cancelar esta reserva"
+                                  title={isRec ? 'Opções de cancelamento da série recorrente' : 'Cancelar esta reserva'}
                                 >
                                   <XCircle className="w-3.5 h-3.5" />
-                                  {cancellingId === resId ? '...' : 'Cancelar'}
+                                  {cancellingId === resId ? '...' : isRec ? 'Cancelar...' : 'Cancelar'}
                                 </button>
                               ) : (
                                 <span className="text-[10px] text-slate-400 italic">
@@ -951,16 +1107,16 @@ export default function Reservas() {
         </>
       )}
 
-      {/* Modal 1: Nova Reserva */}
+      {/* Modal 1: Nova Reserva (Simples ou Recorrente) */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
               <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
                 <CalendarCheck className="w-5 h-5 text-teal-600" />
-                Solicitar Reserva de Recurso
+                {isRecorrente ? 'Criar Série de Reservas Recorrentes' : 'Solicitar Reserva de Recurso'}
               </h3>
-              <button onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -980,7 +1136,7 @@ export default function Reservas() {
                   <button
                     type="button"
                     onClick={() => setTipoRecurso('equipamento')}
-                    className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border transition ${
+                    className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
                       tipoRecurso === 'equipamento'
                         ? 'bg-teal-50 border-teal-500 text-teal-700'
                         : 'border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -992,7 +1148,7 @@ export default function Reservas() {
                   <button
                     type="button"
                     onClick={() => setTipoRecurso('espaco')}
-                    className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border transition ${
+                    className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
                       tipoRecurso === 'espaco'
                         ? 'bg-teal-50 border-teal-500 text-teal-700'
                         : 'border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -1012,7 +1168,7 @@ export default function Reservas() {
                     value={formData.equipamento_id}
                     onChange={(e) => setFormData({ ...formData, equipamento_id: e.target.value })}
                     required
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white"
                   >
                     {equipamentos.map((eq) => {
                       const id = eq.id || eq.id_equipamento;
@@ -1032,7 +1188,7 @@ export default function Reservas() {
                     value={formData.espaco_id}
                     onChange={(e) => setFormData({ ...formData, espaco_id: e.target.value })}
                     required
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white"
                   >
                     {espacos.map((esp) => {
                       const id = esp.id || esp.id_espaco;
@@ -1046,29 +1202,143 @@ export default function Reservas() {
                 </div>
               )}
 
-              {/* Data Início e Fim */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Início da Reserva</label>
+              {/* Checkbox / Toggle de Recorrência (Bloco 08) */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                <label className="flex items-center gap-2 cursor-pointer">
                   <input
-                    type="datetime-local"
-                    required
-                    value={formData.data_inicio}
-                    onChange={(e) => setFormData({ ...formData, data_inicio: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                    type="checkbox"
+                    checked={isRecorrente}
+                    onChange={(e) => setIsRecorrente(e.target.checked)}
+                    className="w-4 h-4 text-teal-600 rounded border-slate-300 focus:ring-teal-500"
                   />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Término da Reserva</label>
-                  <input
-                    type="datetime-local"
-                    required
-                    value={formData.data_fim}
-                    onChange={(e) => setFormData({ ...formData, data_fim: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-                  />
-                </div>
+                  <div className="flex items-center gap-1.5">
+                    <Repeat className="w-3.5 h-3.5 text-teal-600" />
+                    <span className="text-xs font-bold text-slate-800">Repetir agendamento (Reserva Recorrente)</span>
+                  </div>
+                </label>
+
+                {isRecorrente && (
+                  <div className="space-y-3 pt-2 border-t border-slate-200/80">
+                    <div className="p-2 bg-amber-50 rounded-lg text-[11px] text-amber-800 border border-amber-200 flex items-start gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                      <span>
+                        <strong>Verificação Rigorosa:</strong> Testaremos todas as ocorrências da série contra a agenda. Se houver qualquer sobreposição em alguma das datas, a série é rejeitada para evitar conflitos.
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">
+                        Dias da Semana de Ocorrência
+                      </label>
+                      <div className="grid grid-cols-7 gap-1">
+                        {diasSemanaNomes.map((nome, idx) => {
+                          const active = diasSemana.includes(idx);
+                          return (
+                            <button
+                              type="button"
+                              key={idx}
+                              onClick={() => toggleDiaSemana(idx)}
+                              className={`py-1.5 text-[11px] font-bold rounded-lg border transition cursor-pointer ${
+                                active
+                                  ? 'bg-teal-600 text-white border-teal-600 shadow-2xs'
+                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              {nome}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">Data Início da Série</label>
+                        <input
+                          type="date"
+                          required
+                          value={formData.data_inicio.slice(0, 10)}
+                          onChange={(e) => setFormData({ ...formData, data_inicio: `${e.target.value}T${horaInicio}` })}
+                          className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">Data Limite da Repetição</label>
+                        <input
+                          type="date"
+                          required
+                          value={dataFimSerie}
+                          onChange={(e) => setDataFimSerie(e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">Horário Inicial</label>
+                        <input
+                          type="time"
+                          required
+                          value={horaInicio}
+                          onChange={(e) => setHoraInicio(e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">Horário Final</label>
+                        <input
+                          type="time"
+                          required
+                          value={horaFim}
+                          onChange={(e) => setHoraFim(e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Tolerância para No-Show (minutos após início)
+                      </label>
+                      <input
+                        type="number"
+                        min="5"
+                        max="60"
+                        value={toleranciaNoShow}
+                        onChange={(e) => setToleranciaNoShow(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 bg-white"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* Data Início e Fim (Modo simples) */}
+              {!isRecorrente && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Início da Reserva</label>
+                    <input
+                      type="datetime-local"
+                      required
+                      value={formData.data_inicio}
+                      onChange={(e) => setFormData({ ...formData, data_inicio: e.target.value })}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Término da Reserva</label>
+                    <input
+                      type="datetime-local"
+                      required
+                      value={formData.data_fim}
+                      onChange={(e) => setFormData({ ...formData, data_fim: e.target.value })}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Finalidade / Projeto Acadêmico</label>
@@ -1077,7 +1347,7 @@ export default function Reservas() {
                   required
                   value={formData.finalidade}
                   onChange={(e) => setFormData({ ...formData, finalidade: e.target.value })}
-                  placeholder="Ex: TCC - Fabricação mecânica e testes"
+                  placeholder="Ex: TCC - Fabricação mecânica e testes em bancada"
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 />
               </div>
@@ -1093,19 +1363,19 @@ export default function Reservas() {
                 ></textarea>
               </div>
 
-              <div className="pt-3 flex justify-end gap-2">
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-sm"
+                  className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-sm cursor-pointer"
                 >
-                  Confirmar Reserva
+                  {isRecorrente ? 'Confirmar Série Recorrente' : 'Confirmar Reserva'}
                 </button>
               </div>
             </form>
@@ -1113,7 +1383,7 @@ export default function Reservas() {
         </div>
       )}
 
-      {/* Modal 2: Detalhes da Reserva Selecionada (ao clicar no calendário ou lista) */}
+      {/* Modal 2: Detalhes da Reserva Selecionada */}
       {detalheModalOpen && reservaSelecionada && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
@@ -1122,7 +1392,7 @@ export default function Reservas() {
                 <Info className="w-5 h-5 text-teal-600" />
                 Detalhes da Reserva #{reservaSelecionada.id || reservaSelecionada.id_reserva}
               </h3>
-              <button onClick={() => setDetalheModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setDetalheModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1143,6 +1413,12 @@ export default function Reservas() {
                     Laboratório: {reservaSelecionada.espaco_nome}
                   </div>
                 )}
+                {reservaSelecionada.recorrente === 1 && (
+                  <div className="inline-flex items-center gap-1 mt-1 text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg">
+                    <Repeat className="w-3 h-3" />
+                    <span>Integrante de série periódica</span>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1155,7 +1431,7 @@ export default function Reservas() {
                   <span className="text-[10px] uppercase font-bold text-slate-400">Status</span>
                   <div>
                     <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-200">
-                      {reservaSelecionada.status}
+                      {reservaSelecionada.no_show === 1 ? 'No-Show' : reservaSelecionada.status}
                     </span>
                   </div>
                 </div>
@@ -1182,24 +1458,150 @@ export default function Reservas() {
               )}
             </div>
 
-            <div className="pt-5 border-t border-slate-100 mt-5 flex items-center justify-between">
-              {(reservaSelecionada.status || '').toLowerCase() !== 'cancelada' ? (
-                <button
-                  onClick={() => handleCancel(reservaSelecionada.id || reservaSelecionada.id_reserva)}
-                  disabled={cancellingId === (reservaSelecionada.id || reservaSelecionada.id_reserva)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 transition"
-                >
-                  Cancelar Reserva
-                </button>
-              ) : (
-                <span className="text-xs text-rose-500 font-medium">Esta reserva já foi cancelada</span>
-              )}
+            <div className="pt-5 border-t border-slate-100 mt-5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                {(reservaSelecionada.status || '').toLowerCase() !== 'cancelada' && (
+                  <button
+                    onClick={() => handleInitiateCancel(reservaSelecionada)}
+                    disabled={cancellingId === (reservaSelecionada.id || reservaSelecionada.id_reserva)}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 transition cursor-pointer"
+                  >
+                    Cancelar Reserva
+                  </button>
+                )}
+
+                {isAdmin && reservaSelecionada.no_show !== 1 && (reservaSelecionada.status || '').toLowerCase() !== 'cancelada' && (
+                  <button
+                    onClick={() => handleMarcarNoShow(reservaSelecionada.id || reservaSelecionada.id_reserva)}
+                    className="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-amber-700 hover:bg-amber-50 border border-amber-200 transition cursor-pointer"
+                    title="Registrar que o usuário não compareceu"
+                  >
+                    Marcar No-Show
+                  </button>
+                )}
+              </div>
 
               <button
                 onClick={() => setDetalheModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition cursor-pointer"
               >
                 Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 3: Cancelamento de Série Recorrente (Bloco 08) */}
+      {cancelRecModalOpen && reservaParaCancelar && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
+                <Repeat className="w-5 h-5 text-indigo-600" />
+                Cancelar Ocorrência Recorrente
+              </h3>
+              <button onClick={() => setCancelRecModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 mb-4">
+              Esta reserva é integrante de uma série periódica. Selecione como deseja proceder com o cancelamento:
+            </p>
+
+            <div className="space-y-3">
+              <label className={`block p-3 rounded-xl border cursor-pointer transition ${
+                tipoCancelamento === 'apenas_esta'
+                  ? 'border-teal-500 bg-teal-50/50 ring-1 ring-teal-500'
+                  : 'border-slate-200 hover:bg-slate-50'
+              }`}>
+                <div className="flex items-start gap-2.5">
+                  <input
+                    type="radio"
+                    name="tipo_canc"
+                    value="apenas_esta"
+                    checked={tipoCancelamento === 'apenas_esta'}
+                    onChange={() => setTipoCancelamento('apenas_esta')}
+                    className="mt-0.5 text-teal-600"
+                  />
+                  <div>
+                    <span className="font-bold text-slate-800 text-xs block">
+                      Apenas esta ocorrência ({new Date(reservaParaCancelar.data_inicio).toLocaleDateString('pt-BR')})
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      Libera este horário sem destruir nem alterar as demais semanas da série.
+                    </span>
+                  </div>
+                </div>
+              </label>
+
+              <label className={`block p-3 rounded-xl border cursor-pointer transition ${
+                tipoCancelamento === 'proximas'
+                  ? 'border-teal-500 bg-teal-50/50 ring-1 ring-teal-500'
+                  : 'border-slate-200 hover:bg-slate-50'
+              }`}>
+                <div className="flex items-start gap-2.5">
+                  <input
+                    type="radio"
+                    name="tipo_canc"
+                    value="proximas"
+                    checked={tipoCancelamento === 'proximas'}
+                    onChange={() => setTipoCancelamento('proximas')}
+                    className="mt-0.5 text-teal-600"
+                  />
+                  <div>
+                    <span className="font-bold text-slate-800 text-xs block">
+                      Esta e todas as próximas ocorrências
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      Encerra a série a partir desta data, mantendo o histórico das datas anteriores.
+                    </span>
+                  </div>
+                </div>
+              </label>
+
+              <label className={`block p-3 rounded-xl border cursor-pointer transition ${
+                tipoCancelamento === 'toda_serie'
+                  ? 'border-rose-500 bg-rose-50/40 ring-1 ring-rose-500'
+                  : 'border-slate-200 hover:bg-slate-50'
+              }`}>
+                <div className="flex items-start gap-2.5">
+                  <input
+                    type="radio"
+                    name="tipo_canc"
+                    value="toda_serie"
+                    checked={tipoCancelamento === 'toda_serie'}
+                    onChange={() => setTipoCancelamento('toda_serie')}
+                    className="mt-0.5 text-rose-600"
+                  />
+                  <div>
+                    <span className="font-bold text-slate-800 text-xs block">
+                      Toda a série recorrente
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      Cancela todas as ocorrências vinculadas a este grupo de repetição.
+                    </span>
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCancelRecModalOpen(false)}
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCancelRecorrente}
+                disabled={cancellingId !== null}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {cancellingId ? 'Processando...' : 'Confirmar Cancelamento'}
               </button>
             </div>
           </div>

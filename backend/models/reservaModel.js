@@ -247,6 +247,178 @@ async function cancelReserva(id) {
   return updateReserva(id, { status: 'cancelada' });
 }
 
+/**
+ * Criação atômica de série recorrente (Bloco 08)
+ * REGRA CRÍTICA: Verifica conflitos em TODAS as ocorrências antes de confirmar a série.
+ */
+async function createSerieRecorrente({
+  usuario_id,
+  equipamento_id,
+  espaco_id,
+  ocorrencias,
+  finalidade,
+  observacoes,
+  regra_recorrencia,
+  tolerancia_no_show_min = 15
+}) {
+  if (!ocorrencias || ocorrencias.length === 0) {
+    throw new Error('Nenhuma ocorrência fornecida para a série recorrente.');
+  }
+
+  // 1. Verificação rigorosa de conflito em TODAS as ocorrências da série
+  for (let i = 0; i < ocorrencias.length; i++) {
+    const oc = ocorrencias[i];
+    const conflitos = await checkConflict({
+      equipamento_id,
+      espaco_id,
+      data_inicio: oc.data_inicio,
+      data_fim: oc.data_fim
+    });
+
+    if (conflitos.length > 0) {
+      const c = conflitos[0];
+      return {
+        success: false,
+        ocorrenciaIndice: i + 1,
+        totalOcorrencias: ocorrencias.length,
+        data_conflito: oc.data_inicio,
+        conflito: c,
+        error: `Conflito detectado na ocorrência ${i + 1} de ${ocorrencias.length} (${new Date(oc.data_inicio).toLocaleString('pt-BR')}): já existe reserva ativa por ${c.usuario_nome || 'outro usuário'}. Toda a série foi cancelada para prevenir sobreposição.`
+      };
+    }
+  }
+
+  // 2. Com todas as ocorrências validadas sem conflito, cria o grupo da série
+  const grupo_recorrencia_id = 'rec_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+  const criadas = [];
+
+  for (const oc of ocorrencias) {
+    const payload = {
+      usuario_id,
+      equipamento_id: equipamento_id || null,
+      espaco_id: espaco_id || null,
+      data_inicio: oc.data_inicio,
+      data_fim: oc.data_fim,
+      status: 'confirmada',
+      finalidade: finalidade || null,
+      observacoes: observacoes || null,
+      grupo_recorrencia_id,
+      recorrente: 1,
+      regra_recorrencia: regra_recorrencia || 'semanal',
+      tolerancia_no_show_min: Number(tolerancia_no_show_min) || 15
+    };
+    const id = await insert(TABLE, payload);
+    criadas.push(id);
+  }
+
+  return {
+    success: true,
+    grupo_recorrencia_id,
+    totalCriadas: criadas.length,
+    reservasCriadas: criadas
+  };
+}
+
+/**
+ * Cancelamento granular de ocorrência recorrente (Bloco 08)
+ * Opções: 'apenas_esta' | 'proximas' | 'toda_serie'
+ * Caso mínimo obrigatório: liberar uma ocorrência individual sem destruir a série inteira.
+ */
+async function cancelarOcorrenciaRecorrente(id, tipo = 'apenas_esta') {
+  const reserva = await getReservaById(id);
+  if (!reserva) return null;
+
+  if (!reserva.grupo_recorrencia_id || tipo === 'apenas_esta') {
+    // Cancela apenas esta ocorrência individual
+    await update(TABLE, id, { status: 'cancelada' });
+    return {
+      tipo: 'apenas_esta',
+      afetadas: 1,
+      reserva: await getReservaById(id)
+    };
+  }
+
+  if (tipo === 'proximas') {
+    // Cancela esta e todas as ocorrências futuras da mesma série
+    const [result] = await pool.query(`
+      UPDATE \`${TABLE}\`
+      SET status = 'cancelada'
+      WHERE grupo_recorrencia_id = ? AND data_inicio >= ? AND status != 'cancelada'
+    `, [reserva.grupo_recorrencia_id, reserva.data_inicio]);
+
+    return {
+      tipo: 'proximas',
+      afetadas: result.affectedRows,
+      grupo_recorrencia_id: reserva.grupo_recorrencia_id
+    };
+  }
+
+  if (tipo === 'toda_serie') {
+    // Cancela toda a série recorrente
+    const [result] = await pool.query(`
+      UPDATE \`${TABLE}\`
+      SET status = 'cancelada'
+      WHERE grupo_recorrencia_id = ? AND status != 'cancelada'
+    `, [reserva.grupo_recorrencia_id]);
+
+    return {
+      tipo: 'toda_serie',
+      afetadas: result.affectedRows,
+      grupo_recorrencia_id: reserva.grupo_recorrencia_id
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Marcação de No-Show com tolerância (Bloco 08)
+ * Regra: Não aplicar punição automática. Preservar histórico para indicadores.
+ */
+async function marcarNoShow(id) {
+  const reserva = await getReservaById(id);
+  if (!reserva) return null;
+
+  await update(TABLE, id, {
+    no_show: 1,
+    no_show_at: new Date(),
+    status: 'no_show'
+  });
+
+  return getReservaById(id);
+}
+
+/**
+ * Verificação em lote de no-shows baseada na tolerância configurável (Bloco 08)
+ */
+async function verificarNoShowsAutomaticos(toleranciaMin = 15) {
+  // Busca reservas confirmadas cujo início + tolerância já passou, e que não possuem utilização iniciada
+  const [candidatos] = await pool.query(`
+    SELECT r.id, r.usuario_id, r.data_inicio, r.finalidade
+    FROM \`${TABLE}\` r
+    WHERE r.status IN ('confirmada', 'pendente')
+      AND (r.no_show = 0 OR r.no_show IS NULL)
+      AND r.data_inicio < DATE_SUB(NOW(), INTERVAL ? MINUTE)
+      AND NOT EXISTS (
+        SELECT 1 FROM utilizacao u WHERE u.reserva_id = r.id
+      )
+  `, [toleranciaMin]);
+
+  if (candidatos.length > 0) {
+    const ids = candidatos.map(c => c.id);
+    await pool.query(`
+      UPDATE \`${TABLE}\`
+      SET no_show = 1, no_show_at = NOW(), status = 'no_show'
+      WHERE id IN (?)
+    `, [ids]);
+  }
+
+  return {
+    totalMarcados: candidatos.length,
+    reservas: candidatos
+  };
+}
+
 module.exports = {
   TABLE,
   getAllReservas,
@@ -255,5 +427,10 @@ module.exports = {
   getReservasCalendario,
   createReserva,
   updateReserva,
-  cancelReserva
+  cancelReserva,
+  createSerieRecorrente,
+  cancelarOcorrenciaRecorrente,
+  marcarNoShow,
+  verificarNoShowsAutomaticos
 };
+

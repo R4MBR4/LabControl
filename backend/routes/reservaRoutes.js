@@ -7,9 +7,13 @@ router.use(authenticateToken);
 
 router.get('/', reservaController.list);
 router.get('/calendario', reservaController.getCalendario);
+router.post('/recorrente', reservaController.createRecorrente);
+router.post('/verificar-no-shows', authorizeAdmin, reservaController.verificarNoShows);
 router.get('/:id', reservaController.getById);
 router.post('/', reservaController.create);
 router.put('/:id/cancelar', reservaController.cancel);
+router.put('/:id/cancelar-recorrencia', reservaController.cancelarRecorrente);
+router.post('/:id/no-show', authorizeAdmin, reservaController.marcarNoShow);
 router.patch('/:id/status', authorizeAdmin, reservaController.updateStatus);
 
 module.exports = router;

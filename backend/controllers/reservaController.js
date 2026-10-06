@@ -212,11 +212,185 @@ async function updateStatus(req, res) {
   }
 }
 
+/**
+ * Criação de série recorrente (Bloco 08)
+ */
+async function createRecorrente(req, res) {
+  try {
+    const {
+      equipamento_id,
+      espaco_id,
+      finalidade,
+      observacoes,
+      dias_semana,
+      data_inicio_serie,
+      data_fim_serie,
+      hora_inicio,
+      hora_fim,
+      tolerancia_no_show_min = 15
+    } = req.body;
+
+    const usuario_id = req.user.id;
+
+    if (!dias_semana || !Array.isArray(dias_semana) || dias_semana.length === 0) {
+      return res.status(400).json({ error: 'Selecione ao menos um dia da semana para a série recorrente.' });
+    }
+    if (!data_inicio_serie || !data_fim_serie || !hora_inicio || !hora_fim) {
+      return res.status(400).json({ error: 'Data de início, data de término, hora inicial e final são obrigatórias.' });
+    }
+    if (new Date(data_inicio_serie) > new Date(data_fim_serie)) {
+      return res.status(400).json({ error: 'A data inicial da série deve ser anterior à data final.' });
+    }
+    if (!equipamento_id && !espaco_id) {
+      return res.status(400).json({ error: 'Informe ao menos um equipamento ou espaço para reservar.' });
+    }
+
+    let finalEspacoId = espaco_id ? Number(espaco_id) : null;
+    if (equipamento_id) {
+      const equip = await equipamentoModel.getEquipamentoById(equipamento_id);
+      if (!equip) {
+        return res.status(404).json({ error: 'Equipamento selecionado não existe.' });
+      }
+      if (!finalEspacoId && equip.espaco_id) {
+        finalEspacoId = equip.espaco_id;
+      }
+      const statusAtual = (equip.status || '').toLowerCase();
+      if (equip.inativo || statusAtual === 'inativo') {
+        return res.status(400).json({ error: 'Equipamento inativo não pode receber reservas.' });
+      }
+      if (statusAtual === 'manutencao' || statusAtual === 'em_manutencao') {
+        return res.status(400).json({ error: 'Equipamento em manutenção não pode ser reservado.' });
+      }
+      if (equip.exige_capacitacao) {
+        const autorizado = await capacitacaoModel.checkUserCapacitacao(usuario_id, equipamento_id);
+        if (!autorizado) {
+          return res.status(403).json({ error: 'Este equipamento exige capacitação prévia. Usuário não habilitado.' });
+        }
+      }
+    }
+
+    // Gera as ocorrências
+    const ocorrencias = [];
+    const dtAtual = new Date(data_inicio_serie + 'T12:00:00');
+    const dtLimite = new Date(data_fim_serie + 'T12:00:00');
+    const diasPermitidos = dias_semana.map(Number);
+
+    while (dtAtual <= dtLimite) {
+      const dayOfWeek = dtAtual.getDay();
+      if (diasPermitidos.includes(dayOfWeek)) {
+        const y = dtAtual.getFullYear();
+        const m = String(dtAtual.getMonth() + 1).padStart(2, '0');
+        const d = String(dtAtual.getDate()).padStart(2, '0');
+        const dataStr = `${y}-${m}-${d}`;
+
+        ocorrencias.push({
+          data_inicio: `${dataStr} ${hora_inicio}:00`,
+          data_fim: `${dataStr} ${hora_fim}:00`
+        });
+      }
+      dtAtual.setDate(dtAtual.getDate() + 1);
+    }
+
+    if (ocorrencias.length === 0) {
+      return res.status(400).json({
+        error: 'Nenhuma ocorrência encontrada para os dias da semana selecionados no período informado.'
+      });
+    }
+
+    // Regra Crítica: Valida TODAS as ocorrências antes de confirmar
+    const resultado = await reservaModel.createSerieRecorrente({
+      usuario_id,
+      equipamento_id: equipamento_id || null,
+      espaco_id: finalEspacoId,
+      ocorrencias,
+      finalidade,
+      observacoes,
+      regra_recorrencia: `semanal:${diasPermitidos.join(',')}`,
+      tolerancia_no_show_min
+    });
+
+    if (!resultado.success) {
+      return res.status(409).json(resultado);
+    }
+
+    res.status(201).json(resultado);
+  } catch (err) {
+    console.error('[Reserva Recorrente] Erro:', err);
+    res.status(500).json({ error: 'Erro ao criar série recorrente: ' + err.message });
+  }
+}
+
+/**
+ * Cancelamento granular de ocorrência de série (Bloco 08)
+ */
+async function cancelarRecorrente(req, res) {
+  try {
+    const id = req.params.id;
+    const tipo = req.body?.tipo || req.query?.tipo || 'apenas_esta';
+    const reserva = await reservaModel.getReservaById(id);
+    if (!reserva) {
+      return res.status(404).json({ error: 'Reserva não encontrada' });
+    }
+
+    const userRole = (req.user?.perfil || '').toLowerCase();
+    const isPrivileged = userRole === 'admin' || userRole === 'administrador' || userRole === 'docente' || userRole === 'professor';
+    const isOwner = Number(reserva.usuario_id || reserva.id_usuario) === Number(req.user?.id);
+
+    if (!isPrivileged && !isOwner) {
+      return res.status(403).json({ error: 'Você não tem permissão para cancelar esta reserva' });
+    }
+
+    const resultado = await reservaModel.cancelarOcorrenciaRecorrente(id, tipo);
+    res.json({ message: 'Cancelamento efetuado com sucesso', ...resultado });
+  } catch (err) {
+    console.error('[Reserva] Erro ao cancelar ocorrência:', err);
+    res.status(500).json({ error: 'Erro ao cancelar ocorrência: ' + err.message });
+  }
+}
+
+/**
+ * Registro de No-Show (Bloco 08)
+ */
+async function marcarNoShow(req, res) {
+  try {
+    const reserva = await reservaModel.marcarNoShow(req.params.id);
+    if (!reserva) {
+      return res.status(404).json({ error: 'Reserva não encontrada' });
+    }
+    res.json({ message: 'No-show registrado com sucesso. Histórico preservado.', reserva });
+  } catch (err) {
+    console.error('[Reserva] Erro ao marcar no-show:', err);
+    res.status(500).json({ error: 'Erro ao registrar no-show: ' + err.message });
+  }
+}
+
+/**
+ * Verificação automatizada de no-shows (Bloco 08)
+ */
+async function verificarNoShows(req, res) {
+  try {
+    const tolerancia = Number(req.body?.tolerancia || req.query?.tolerancia || 15);
+    const resultado = await reservaModel.verificarNoShowsAutomaticos(tolerancia);
+    res.json({
+      message: `Verificação concluída. ${resultado.totalMarcados} reserva(s) identificadas como no-show.`,
+      ...resultado
+    });
+  } catch (err) {
+    console.error('[Reserva] Erro na verificação de no-shows:', err);
+    res.status(500).json({ error: 'Erro ao verificar no-shows: ' + err.message });
+  }
+}
+
 module.exports = {
   list,
   getCalendario,
   getById,
   create,
   cancel,
-  updateStatus
+  updateStatus,
+  createRecorrente,
+  cancelarRecorrente,
+  marcarNoShow,
+  verificarNoShows
 };
+
