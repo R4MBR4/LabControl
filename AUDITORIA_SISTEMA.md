@@ -56,7 +56,7 @@ LabControl/
 
 ---
 
-## 2. Inventário do Banco de Dados Atual (12 Tabelas)
+## 2. Inventário do Banco de Dados Atual (13 Tabelas)
 
 | Tabela | Chave Primária | Foreign Keys | Índices Relevantes | Finalidade |
 |---|---|---|---|---|
@@ -72,6 +72,7 @@ LabControl/
 | `inventario` | `id` (AUTO_INCREMENT) | `fk_inventario_espaco`, `fk_inventario_usuario` | `idx_inventario_espaco`, `idx_inventario_status` | Sessões de inventário por laboratório |
 | `inventario_item` | `id` (AUTO_INCREMENT) | Inventário, equipamento, espaços esperado/encontrado e usuário da decisão | `idx_invitem_sessao`, `idx_invitem_equip`, `idx_invitem_status` | Leituras, divergências e itens não localizados |
 | `configuracao_sistema` | `chave` | `fk_config_sistema_usuario` $\rightarrow$ `usuario(id)` | Chave primária | Configurações administrativas, incluindo tolerância de no-show |
+| `auditoria_evento` | `id` (BIGINT AUTO_INCREMENT) | Usuário responsável (`ON DELETE SET NULL`) | Equipamento/data, entidade/ID, usuário/data | Trilha histórica append-only de alterações operacionais |
 
 ---
 
@@ -87,13 +88,13 @@ LabControl/
   * `POST /`, `PUT /:id`, `DELETE /:id`: Restritos a administradores.
 * **`/api/equipamentos`**:
   * `GET /`, `GET /:id`, `GET /:id/historico`, `GET /:id/qrcode`: Consulta aberta a autenticados.
-  * `POST /`, `PUT /:id`, `DELETE /:id`: Restritos a administradores.
+  * `POST /`, `PUT /:id`, `POST /:id/inativar`, `POST /:id/reativar`, `DELETE /:id`: Restritos a administradores; operações relevantes entram na auditoria.
 * **`/api/reservas`**:
   * `GET /`, `GET /:id`, `POST /`: Solicitação e listagem com escopo por perfil.
   * `GET /calendario`: Eventos do calendário.
   * `GET/PUT /configuracao/no-show`: Leitura e alteração administrativa da tolerância.
   * `POST /recorrente`, `PUT /:id/cancelar-recorrencia`, `POST /verificar-no-shows`: Séries e no-show.
-  * `PUT /:id/cancelar`: Cancelamento pelo solicitante ou administrador.
+  * `PUT /:id/cancelar`: Cancelamento pelo solicitante ou administrador, registrado na auditoria.
   * `PUT /:id/status`: Atualização restrita.
 * **`/api/utilizacoes`**:
   * `GET /`, `GET /:id`: Consulta de utilizações ativas ou concluídas.
@@ -101,12 +102,13 @@ LabControl/
   * `POST /checkout`: Conclusão com condição obrigatória e gatilho de avaria.
 * **`/api/ocorrencias`**:
   * `GET /`, `POST /`, `GET /:id`: Abertura e acompanhamento de chamados.
-  * `PUT /:id/decidir`: Parecer do administrador e encaminhamento para manutenção.
-  * `DELETE /:id`: Exclusão administrativa.
+  * `PATCH /:id/decidir`: Parecer do administrador e encaminhamento para manutenção, com trilha do responsável.
+  * `DELETE /:id`: Bloqueado para preservar o histórico.
 * **`/api/manutencoes`**:
   * `GET /`, `GET /:id`: Consulta de ordens de serviço.
   * `POST /`, `PUT /:id`: Registro (bloqueia o equipamento).
-  * `PUT /:id/concluir`: Finalização com laudo técnico e retorno do equipamento para disponível.
+  * `PATCH /:id/concluir`: Finalização com laudo técnico e registro auditável.
+  * `DELETE /:id`: Bloqueado para preservar o histórico.
 * **`/api/consumiveis`**:
   * `GET /`, `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id`: Gestão de insumos.
   * `POST /:id/movimentar`: Entrada e saída atômica com trava contra saldo negativo.
@@ -143,10 +145,11 @@ LabControl/
 
 ---
 
-## 5. Estado após os blocos de reservas, dashboard e ocorrências/manutenção
+## 5. Estado após os blocos de reservas, dashboard, ocorrências/manutenção e auditoria
 
 * **Tolerância de no-show:** Configuração administrativa persistida em `configuracao_sistema`; aplicar `database/migrations/07_configuracao_no_show.sql` em bancos existentes.
 * **Dashboard administrativo:** KPIs de equipamentos, espaços, reservas, ocorrências, manutenção e estoque; utilização atual; alertas operacionais e gráficos compactos. Erros da consulta são reportados, sem valores demonstrativos substituindo métricas reais.
 * **Ocorrências e manutenção:** Check-out com avaria é transacional e exige evidência; encaminhamento cria ordem vinculada; laudo é obrigatório para concluir; o equipamento só é liberado sem outras ordens abertas e sem inativação; API preserva ocorrências e ordens sem exclusão física. Aplicar também `database/migrations/08_vinculo_ocorrencia_manutencao.sql` em bancos existentes.
+* **Histórico e auditoria:** `auditoria_evento` registra autor, data/hora, ação e detalhes de alterações em equipamentos, inventário, reservas, utilizações, ocorrências e manutenção. Detalhes do equipamento combina a linha do tempo auditável com os registros operacionais legados; aplicar `database/migrations/09_historico_auditoria.sql` em bancos existentes.
 * **Validação realizada:** build de produção do frontend, verificação de sintaxe do backend e testes direcionados com dependências de banco simuladas. A integração com uma base MySQL configurada não foi executada nesta etapa.
-* **Próximo bloco recomendado — Histórico e auditoria:** registrar autoria e timestamp das alterações administrativas relevantes e completar a trilha unificada exibida nos detalhes do equipamento.
+* **Próximo bloco recomendado — Importação e exportação:** validar importação em lote com prévia de erros e exportação CSV dos dados previstos na especificação.

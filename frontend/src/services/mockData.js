@@ -559,7 +559,7 @@ export function handleMockRequest(method, url, data) {
     const utilizacoes = db.utilizacoes.filter(u => u.equipamento_id === id);
     const ocorrencias = db.ocorrencias.filter(o => o.equipamento_id === id);
     const manutencoes = db.manutencoes.filter(m => m.equipamento_id === id);
-    return ok({ equipamento: equip, utilizacoes, ocorrencias, manutencoes });
+    return ok({ equipamento: equip, utilizacoes, ocorrencias, manutencoes, auditoria: [] });
   }
   if (cleanUrl.startsWith('/equipamentos/')) {
     const id = Number(cleanUrl.split('/')[2]);

@@ -98,8 +98,8 @@ async function createManutencao(data, executor = pool) {
 /**
  * Conclusão da manutenção: registra data_fim e retorna equipamento para 'disponivel'
  */
-async function finalizarManutencao(id, conclusaoData = {}) {
-  const manutencao = await getManutencaoById(id);
+async function finalizarManutencao(id, conclusaoData = {}, executor = pool) {
+  const manutencao = await getManutencaoById(id, executor);
   if (!manutencao) {
     throw new Error('Registro de manutenção não encontrado');
   }
@@ -119,16 +119,16 @@ async function finalizarManutencao(id, conclusaoData = {}) {
     payload[dataFimCol] = new Date();
   }
 
-  await update(TABLE, id, payload);
+  await update(TABLE, id, payload, executor);
 
-  const [outrasOrdensAbertas] = await pool.query(`
+  const [outrasOrdensAbertas] = await executor.query(`
     SELECT COUNT(*) AS total
     FROM \`${TABLE}\`
     WHERE \`${fkEquip}\` = ?
       AND \`${pk}\` <> ?
       AND LOWER(COALESCE(status, '')) NOT IN ('concluida', 'concluído', 'concluido', 'cancelada', 'cancelado')
   `, [equipId, id]);
-  const equipamento = equipId ? await equipamentoModel.getEquipamentoById(equipId) : null;
+  const equipamento = equipId ? await equipamentoModel.getEquipamentoById(equipId, executor) : null;
   const estaInativo = equipamento && (
     Number(equipamento.inativo) === 1 ||
     equipamento.inativo === true ||
@@ -136,15 +136,15 @@ async function finalizarManutencao(id, conclusaoData = {}) {
   );
 
   if (equipId && Number(outrasOrdensAbertas[0]?.total || 0) === 0 && !estaInativo) {
-    await equipamentoModel.updateStatus(equipId, 'disponivel');
+    await equipamentoModel.updateStatus(equipId, 'disponivel', executor);
   }
 
-  return getManutencaoById(id);
+  return getManutencaoById(id, executor);
 }
 
-async function updateManutencao(id, data) {
-  await update(TABLE, id, data);
-  return getManutencaoById(id);
+async function updateManutencao(id, data, executor = pool) {
+  await update(TABLE, id, data, executor);
+  return getManutencaoById(id, executor);
 }
 
 async function deleteManutencao(id) {

@@ -86,7 +86,7 @@ async function getActiveUtilizacaoByEquipamento(equipId) {
   return rows[0] || null;
 }
 
-async function createCheckin(data) {
+async function createCheckin(data, executor = pool) {
   const cols = await getTableColumns(TABLE);
   const checkinPayload = { ...data };
 
@@ -100,8 +100,8 @@ async function createCheckin(data) {
     checkinPayload.status = 'em_uso';
   }
 
-  const id = await insert(TABLE, checkinPayload);
-  return getUtilizacaoById(id);
+  const id = await insert(TABLE, checkinPayload, executor);
+  return getUtilizacaoById(id, executor);
 }
 
 /**

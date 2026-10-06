@@ -1,4 +1,6 @@
 const equipamentoModel = require('../models/equipamentoModel');
+const auditoriaModel = require('../models/auditoriaModel');
+const { pool } = require('../models/dbHelper');
 const QRCode = require('qrcode');
 
 async function list(req, res) {
@@ -42,29 +44,93 @@ async function getById(req, res) {
 }
 
 async function create(req, res) {
+  let connection;
+  let transactionStarted = false;
+
   try {
     const { nome } = req.body;
     if (!nome) {
       return res.status(400).json({ error: 'O nome do equipamento é obrigatório' });
     }
-    const novo = await equipamentoModel.createEquipamento(req.body);
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const novo = await equipamentoModel.createEquipamento(req.body, connection);
+    await auditoriaModel.registrarEvento({
+      equipamento_id: novo.id || novo.id_equipamento,
+      entidade: 'equipamento',
+      entidade_id: novo.id || novo.id_equipamento,
+      acao: 'equipamento_criado',
+      usuario_id: req.user.id,
+      detalhes: { nome: novo.nome, espaco_id: novo.espaco_id, status: novo.status }
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
     res.status(201).json(novo);
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Equipamento] Erro ao cadastrar:', err);
     res.status(500).json({ error: 'Erro ao cadastrar equipamento: ' + err.message });
+  } finally {
+    if (connection) connection.release();
   }
 }
 
 async function update(req, res) {
+  let connection;
+  let transactionStarted = false;
+
   try {
-    const updated = await equipamentoModel.updateEquipamento(req.params.id, req.body);
-    if (!updated) {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const anterior = await equipamentoModel.getEquipamentoById(req.params.id, connection);
+    if (!anterior) {
+      await connection.rollback();
+      transactionStarted = false;
       return res.status(404).json({ error: 'Equipamento não encontrado' });
     }
+    const updated = await equipamentoModel.updateEquipamento(req.params.id, req.body, connection);
+    if (!updated) {
+      await connection.rollback();
+      transactionStarted = false;
+      return res.status(404).json({ error: 'Equipamento não encontrado' });
+    }
+    const camposIgnorados = new Set(['foto_url', 'foto', 'imagem', 'image']);
+    const alteracoes = Object.entries(req.body)
+      .filter(([campo]) => !camposIgnorados.has(campo.toLowerCase()))
+      .reduce((resultado, [campo, valorNovo]) => {
+        const valorAnterior = anterior[campo];
+        if (String(valorAnterior ?? '') !== String(valorNovo ?? '')) {
+          resultado[campo] = { anterior: valorAnterior ?? null, novo: valorNovo ?? null };
+        }
+        return resultado;
+      }, {});
+    if (Object.keys(alteracoes).length > 0) {
+      const campos = Object.keys(alteracoes);
+      const acao = campos.includes('espaco_id') || campos.includes('id_espaco')
+        ? 'equipamento_local_alterado'
+        : campos.includes('status')
+          ? 'equipamento_status_alterado'
+          : 'equipamento_atualizado';
+      await auditoriaModel.registrarEvento({
+        equipamento_id: updated.id || updated.id_equipamento,
+        entidade: 'equipamento',
+        entidade_id: updated.id || updated.id_equipamento,
+        acao,
+        usuario_id: req.user.id,
+        detalhes: { alteracoes }
+      }, connection);
+    }
+    await connection.commit();
+    transactionStarted = false;
     res.json(updated);
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Equipamento] Erro ao atualizar:', err);
     res.status(500).json({ error: 'Erro ao atualizar equipamento: ' + err.message });
+  } finally {
+    if (connection) connection.release();
   }
 }
 
@@ -74,6 +140,9 @@ async function update(req, res) {
  * preservando histórico, ocorrências e manutenções.
  */
 async function inativar(req, res) {
+  let connection;
+  let transactionStarted = false;
+
   try {
     const { motivo } = req.body;
     const usuarioId = req.user?.id;
@@ -87,14 +156,30 @@ async function inativar(req, res) {
       return res.status(404).json({ error: 'Equipamento não encontrado' });
     }
 
-    const inativado = await equipamentoModel.inativarEquipamento(req.params.id, usuarioId, motivo.trim());
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const inativado = await equipamentoModel.inativarEquipamento(req.params.id, usuarioId, motivo.trim(), connection);
+    await auditoriaModel.registrarEvento({
+      equipamento_id: req.params.id,
+      entidade: 'equipamento',
+      entidade_id: req.params.id,
+      acao: 'equipamento_inativado',
+      usuario_id: usuarioId,
+      detalhes: { motivo: motivo.trim() }
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
     res.json({
       message: 'Equipamento inativado com sucesso. Histórico preservado.',
       equipamento: inativado
     });
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Equipamento] Erro ao inativar:', err);
     res.status(500).json({ error: 'Erro ao inativar equipamento: ' + err.message });
+  } finally {
+    if (connection) connection.release();
   }
 }
 
@@ -102,20 +187,38 @@ async function inativar(req, res) {
  * Reativação de Equipamentos
  */
 async function reativar(req, res) {
+  let connection;
+  let transactionStarted = false;
+
   try {
     const equipamento = await equipamentoModel.getEquipamentoById(req.params.id);
     if (!equipamento) {
       return res.status(404).json({ error: 'Equipamento não encontrado' });
     }
 
-    const reativado = await equipamentoModel.reativarEquipamento(req.params.id);
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const reativado = await equipamentoModel.reativarEquipamento(req.params.id, connection);
+    await auditoriaModel.registrarEvento({
+      equipamento_id: req.params.id,
+      entidade: 'equipamento',
+      entidade_id: req.params.id,
+      acao: 'equipamento_reativado',
+      usuario_id: req.user.id
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
     res.json({
       message: 'Equipamento reativado com sucesso.',
       equipamento: reativado
     });
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Equipamento] Erro ao reativar:', err);
     res.status(500).json({ error: 'Erro ao reativar equipamento: ' + err.message });
+  } finally {
+    if (connection) connection.release();
   }
 }
 
@@ -123,25 +226,45 @@ async function reativar(req, res) {
  * Remoção: verifica histórico e inativa se houver uso prévio
  */
 async function remove(req, res) {
+  let connection;
+  let transactionStarted = false;
+
   try {
     const usuarioId = req.user?.id;
     const motivo = req.body?.motivo || 'Inativação solicitada via exclusão de equipamento com histórico.';
-    const result = await equipamentoModel.deleteEquipamento(req.params.id, usuarioId, motivo);
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const result = await equipamentoModel.deleteEquipamento(req.params.id, usuarioId, motivo, connection);
     
     if (!result || !result.success) {
+      await connection.rollback();
+      transactionStarted = false;
       return res.status(404).json({ error: 'Equipamento não encontrado' });
     }
 
+    await auditoriaModel.registrarEvento({
+      equipamento_id: req.params.id,
+      entidade: 'equipamento',
+      entidade_id: req.params.id,
+      acao: result.inativado ? 'equipamento_inativado_por_exclusao' : 'equipamento_excluido_sem_historico',
+      usuario_id: usuarioId,
+      detalhes: { motivo }
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
     res.json(result);
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Equipamento] Erro ao remover:', err);
     res.status(500).json({ error: 'Erro ao remover equipamento: ' + err.message });
+  } finally {
+    if (connection) connection.release();
   }
 }
 
 /**
  * Histórico completo por equipamento
- * (utilizações, ocorrências, manutenções)
  */
 async function getHistorico(req, res) {
   try {
@@ -150,62 +273,15 @@ async function getHistorico(req, res) {
       return res.status(404).json({ error: 'Equipamento não encontrado' });
     }
     const historico = await equipamentoModel.getEquipamentoHistorico(req.params.id);
+    const auditoria = await auditoriaModel.listarEventosEquipamento(req.params.id);
     res.json({
       equipamento: equip,
-      ...historico
+      ...historico,
+      auditoria
     });
   } catch (err) {
     console.error('[Equipamento] Erro ao obter histórico:', err.message);
-    res.json({
-      equipamento: {
-        id: req.params.id,
-        nome: 'Impressora 3D Creality Ender 3 Pro',
-        codigo_patrimonio: `EQ-${req.params.id}`,
-        patrimonio_ufpi: `UFPI-${req.params.id}`,
-        codigo_labcontrol: `LC-EQ-${req.params.id}`,
-        status: 'disponivel',
-        exige_capacitacao: 1,
-        espaco_nome: 'Laboratório de Prototipagem e Impressão 3D',
-        descricao: 'Equipamento de fabricação digital para criação de peças mecânicas em PLA.'
-      },
-      utilizacoes: [
-        {
-          id: 1,
-          usuario_nome: 'Aluno Pesquisador',
-          usuario_email: 'aluno@labcontrol.com',
-          data_checkin: new Date(Date.now() - 7200000),
-          data_checkout: new Date(Date.now() - 1800000),
-          condicao_inicial: 'Equipamento limpo e nivelado',
-          condicao_devolucao: 'Perfeito estado operacional',
-          status: 'finalizado'
-        }
-      ],
-      ocorrencias: [
-        {
-          id: 1,
-          titulo: 'Calibração do bico extrusor',
-          descricao: 'Ajuste de offset do sensor Z para primeira camada',
-          gravidade: 'baixa',
-          status: 'resolvida',
-          usuario_nome: 'Técnico de Laboratório',
-          decisao_admin: 'Calibração validada com impressão de cubo de teste 20mm.',
-          data_registro: new Date(Date.now() - 86400000)
-        }
-      ],
-      manutencoes: [
-        {
-          id: 1,
-          tipo: 'preventiva',
-          descricao: 'Lubrificação das guias lineares e troca do bico 0.4mm',
-          status: 'concluida',
-          custo: 85.00,
-          data_inicio: new Date(Date.now() - 172800000),
-          data_fim: new Date(Date.now() - 86400000),
-          responsavel: 'Suporte Técnico',
-          observacoes: 'Equipamento testado e liberado para uso acadêmico.'
-        }
-      ]
-    });
+    res.status(500).json({ error: 'Erro ao obter histórico do equipamento: ' + err.message });
   }
 }
 

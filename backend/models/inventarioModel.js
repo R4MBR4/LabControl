@@ -18,7 +18,7 @@ async function getAllInventarios() {
   return rows;
 }
 
-async function getInventarioById(id) {
+async function getInventarioById(id, executor = pool) {
   const sql = `
     SELECT inv.*,
            esp.nome AS espaco_nome, esp.codigo AS espaco_codigo,
@@ -29,12 +29,12 @@ async function getInventarioById(id) {
     WHERE inv.id = ?
     LIMIT 1
   `;
-  const [rows] = await pool.query(sql, [id]);
+  const [rows] = await executor.query(sql, [id]);
   const inventario = rows[0];
   if (!inventario) return null;
 
   // Equipamentos esperados neste espaço (ativos)
-  const [esperados] = await pool.query(`
+  const [esperados] = await executor.query(`
     SELECT e.*, esp.nome AS espaco_nome
     FROM equipamento e
     LEFT JOIN espaco esp ON e.espaco_id = esp.id
@@ -43,7 +43,7 @@ async function getInventarioById(id) {
   `, [inventario.espaco_id]);
 
   // Itens conferidos nesta sessão
-  const [itens] = await pool.query(`
+  const [itens] = await executor.query(`
     SELECT it.*,
            e.nome AS equipamento_nome, e.codigo_patrimonio, e.patrimonio_ufpi, e.codigo_labcontrol, e.status AS equipamento_status,
            esp_esp.nome AS espaco_esperado_nome,
@@ -65,9 +65,9 @@ async function getInventarioById(id) {
   };
 }
 
-async function startInventario(espacoId, usuarioId, observacoes = '') {
+async function startInventario(espacoId, usuarioId, observacoes = '', executor = pool) {
   // Conta quantos equipamentos ativos pertencem a este laboratório
-  const [countRows] = await pool.query(`
+  const [countRows] = await executor.query(`
     SELECT COUNT(*) AS total
     FROM equipamento
     WHERE espaco_id = ? AND (inativo = 0 OR inativo IS NULL)
@@ -75,22 +75,22 @@ async function startInventario(espacoId, usuarioId, observacoes = '') {
 
   const totalEsperados = countRows[0]?.total || 0;
 
-  const [res] = await pool.query(`
+  const [res] = await executor.query(`
     INSERT INTO \`${TABLE}\` (espaco_id, usuario_id, status, data_inicio, total_esperados, observacoes)
     VALUES (?, ?, 'em_andamento', NOW(), ?, ?)
   `, [espacoId, usuarioId, totalEsperados, observacoes || null]);
 
-  return getInventarioById(res.insertId);
+  return getInventarioById(res.insertId, executor);
 }
 
-async function scanItem(inventarioId, scannedValue, usuarioId) {
-  const inventario = await getInventarioById(inventarioId);
+async function scanItem(inventarioId, scannedValue, usuarioId, executor = pool) {
+  const inventario = await getInventarioById(inventarioId, executor);
   if (!inventario) throw new Error('Sessão de inventário não encontrada.');
   if (inventario.status !== 'em_andamento') throw new Error('Esta sessão de inventário já foi finalizada.');
 
   // Localiza o equipamento pelo ID, codigo_patrimonio, patrimonio_ufpi ou codigo_labcontrol
   const term = String(scannedValue).trim();
-  const [equipRows] = await pool.query(`
+  const [equipRows] = await executor.query(`
     SELECT e.*, esp.nome AS espaco_nome
     FROM equipamento e
     LEFT JOIN espaco esp ON e.espaco_id = esp.id
@@ -107,7 +107,7 @@ async function scanItem(inventarioId, scannedValue, usuarioId) {
   }
 
   // Verifica se já foi escaneado nesta sessão
-  const [jaLido] = await pool.query(`
+  const [jaLido] = await executor.query(`
     SELECT * FROM \`${ITEM_TABLE}\`
     WHERE inventario_id = ? AND equipamento_id = ?
     LIMIT 1
@@ -127,7 +127,7 @@ async function scanItem(inventarioId, scannedValue, usuarioId) {
   const statusConferencia = isLocalizacaoCorreta ? 'conferido' : 'divergente';
 
   // Insere o item conferido
-  const [insItem] = await pool.query(`
+  const [insItem] = await executor.query(`
     INSERT INTO \`${ITEM_TABLE}\` (
       inventario_id, equipamento_id, espaco_esperado_id, espaco_encontrado_id, status_conferencia, decisao_admin
     ) VALUES (?, ?, ?, ?, ?, ?)
@@ -142,12 +142,12 @@ async function scanItem(inventarioId, scannedValue, usuarioId) {
 
   // Atualiza os contadores na sessão
   if (isLocalizacaoCorreta) {
-    await pool.query(`UPDATE \`${TABLE}\` SET total_conferidos = total_conferidos + 1 WHERE id = ?`, [inventarioId]);
+    await executor.query(`UPDATE \`${TABLE}\` SET total_conferidos = total_conferidos + 1 WHERE id = ?`, [inventarioId]);
   } else {
-    await pool.query(`UPDATE \`${TABLE}\` SET total_divergentes = total_divergentes + 1 WHERE id = ?`, [inventarioId]);
+    await executor.query(`UPDATE \`${TABLE}\` SET total_divergentes = total_divergentes + 1 WHERE id = ?`, [inventarioId]);
   }
 
-  const [itemCriado] = await pool.query(`
+  const [itemCriado] = await executor.query(`
     SELECT it.*,
            e.nome AS equipamento_nome, e.codigo_patrimonio, e.patrimonio_ufpi, e.codigo_labcontrol,
            esp_esp.nome AS espaco_esperado_nome,
@@ -170,8 +170,8 @@ async function scanItem(inventarioId, scannedValue, usuarioId) {
   };
 }
 
-async function decidirDivergencia(inventarioId, itemId, acao, usuarioId) {
-  const [items] = await pool.query(`
+async function decidirDivergencia(inventarioId, itemId, acao, usuarioId, executor = pool) {
+  const [items] = await executor.query(`
     SELECT it.*, inv.espaco_id AS inventario_espaco_id
     FROM \`${ITEM_TABLE}\` it
     JOIN \`${TABLE}\` inv ON it.inventario_id = inv.id
@@ -180,29 +180,38 @@ async function decidirDivergencia(inventarioId, itemId, acao, usuarioId) {
 
   const item = items[0];
   if (!item) throw new Error('Item de divergência não encontrado.');
+  if ((item.status_conferencia || '').toLowerCase() !== 'divergente') {
+    throw new Error('Este item não possui uma divergência de localização pendente.');
+  }
+  if (!['transferir', 'manter'].includes(acao)) {
+    throw new Error('A decisão deve ser transferir ou manter a localização original.');
+  }
 
   const decisao = acao === 'transferir' ? 'transferir_localizacao' : 'manter_localizacao_original';
 
   if (acao === 'transferir') {
     // Atualiza a localização física do equipamento no cadastro
-    await pool.query(`UPDATE equipamento SET espaco_id = ? WHERE id = ?`, [
+    await executor.query(`UPDATE equipamento SET espaco_id = ? WHERE id = ?`, [
       item.espaco_encontrado_id,
       item.equipamento_id
     ]);
   }
 
-  await pool.query(`
+  await executor.query(`
     UPDATE \`${ITEM_TABLE}\`
     SET decisao_admin = ?, decisao_usuario_id = ?, decisao_data = NOW()
     WHERE id = ?
   `, [decisao, usuarioId, itemId]);
 
-  return getInventarioById(inventarioId);
+  return getInventarioById(inventarioId, executor);
 }
 
-async function finalizarInventario(inventarioId) {
-  const inventario = await getInventarioById(inventarioId);
+async function finalizarInventario(inventarioId, executor = pool) {
+  const inventario = await getInventarioById(inventarioId, executor);
   if (!inventario) throw new Error('Inventário não encontrado.');
+  if ((inventario.status || '').toLowerCase() !== 'em_andamento') {
+    throw new Error('Esta sessão de inventário já foi finalizada.');
+  }
 
   // Identifica equipamentos esperados que não foram lidos
   const conferidosIds = inventario.itens.map(it => it.equipamento_id);
@@ -210,7 +219,7 @@ async function finalizarInventario(inventarioId) {
 
   // Grava itens não localizados
   for (const nl of naoLocalizados) {
-    await pool.query(`
+    await executor.query(`
       INSERT INTO \`${ITEM_TABLE}\` (
         inventario_id, equipamento_id, espaco_esperado_id, espaco_encontrado_id, status_conferencia, decisao_admin
       ) VALUES (?, ?, ?, ?, 'nao_localizado', 'pendente')
@@ -218,7 +227,7 @@ async function finalizarInventario(inventarioId) {
   }
 
   // Atualiza totais e finaliza
-  await pool.query(`
+  await executor.query(`
     UPDATE \`${TABLE}\`
     SET status = 'concluido',
         data_fim = NOW(),
@@ -226,7 +235,7 @@ async function finalizarInventario(inventarioId) {
     WHERE id = ?
   `, [naoLocalizados.length, inventarioId]);
 
-  return getInventarioById(inventarioId);
+  return getInventarioById(inventarioId, executor);
 }
 
 module.exports = {

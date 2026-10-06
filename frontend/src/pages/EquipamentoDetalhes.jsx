@@ -20,15 +20,108 @@ import {
   Barcode,
   Layers,
   Sparkles,
+  Activity,
   Camera,
   Eye,
   X
 } from 'lucide-react';
 
+const AUDIT_ACTION_LABELS = {
+  equipamento_criado: 'Equipamento cadastrado',
+  equipamento_atualizado: 'Cadastro do equipamento atualizado',
+  equipamento_local_alterado: 'Localização do equipamento alterada',
+  equipamento_status_alterado: 'Status do equipamento alterado',
+  equipamento_inativado: 'Equipamento inativado',
+  equipamento_reativado: 'Equipamento reativado',
+  equipamento_inativado_por_exclusao: 'Equipamento inativado para preservar o histórico',
+  equipamento_excluido_sem_historico: 'Equipamento removido sem histórico associado',
+  inventario_divergencia_detectada: 'Divergência de localização detectada no inventário',
+  inventario_divergencia_decidida: 'Decisão administrativa sobre divergência de inventário',
+  equipamento_nao_localizado_em_inventario: 'Equipamento não localizado no inventário',
+  decisao_administrativa_registrada: 'Decisão administrativa da ocorrência',
+  reserva_criada: 'Reserva criada',
+  reserva_cancelada: 'Reserva cancelada',
+  reserva_status_alterado: 'Status da reserva alterado',
+  reserva_recorrente_criada: 'Reserva recorrente criada',
+  reserva_recorrente_cancelada: 'Reserva recorrente cancelada',
+  no_show_registrado: 'No-show registrado',
+  no_show_automaticamente_registrado: 'No-show registrado automaticamente',
+  tolerancia_no_show_alterada: 'Tolerância de no-show alterada',
+  checkin_realizado: 'Check-in realizado',
+  checkout_realizado: 'Check-out realizado',
+  ocorrencia_registrada: 'Ocorrência registrada',
+  manutencao_iniciada: 'Manutenção iniciada',
+  manutencao_atualizada: 'Ordem de manutenção atualizada',
+  manutencao_concluida: 'Manutenção concluída'
+};
+
+function formatEventDetails(details = {}) {
+  return Object.entries(details).map(([key, value]) => {
+    if (value === null || value === undefined || value === '') return null;
+    if (key === 'alteracoes' && typeof value === 'object') {
+      return Object.entries(value).map(([field, change]) => {
+        if (!change || typeof change !== 'object') return `${field}: ${String(change)}`;
+        return `${field}: ${change.anterior ?? '—'} → ${change.novo ?? '—'}`;
+      }).join(' · ');
+    }
+    if (typeof value === 'object') return `${key}: ${JSON.stringify(value)}`;
+    return `${key}: ${String(value)}`;
+  }).filter(Boolean).join(' · ');
+}
+
+function buildEquipmentTimeline(data) {
+  const audit = data.auditoria || [];
+  const auditedKeys = new Set(audit.map((event) => `${event.entidade}:${event.entidade_id}:${event.acao}`));
+  const events = audit.map((event) => ({
+    id: `audit-${event.id}`,
+    date: event.criado_em,
+    action: event.acao,
+    label: AUDIT_ACTION_LABELS[event.acao] || event.acao.replaceAll('_', ' '),
+    user: event.usuario_nome || 'Usuário removido ou não identificado',
+    details: event.detalhes || {}
+  }));
+  const addLegacy = (entity, entityId, action, date, label, user, details) => {
+    if (!date || auditedKeys.has(`${entity}:${entityId}:${action}`)) return;
+    events.push({ id: `${entity}-${entityId}-${action}`, date, action, label, user, details });
+  };
+
+  (data.utilizacoes || []).forEach((item) => {
+    const itemId = item.id || item.id_utilizacao;
+    addLegacy('utilizacao', itemId, 'checkin_realizado', item.data_checkin || item.data_inicio,
+      'Check-in realizado', item.usuario_nome, { reserva_id: item.reserva_id || null });
+    if (item.data_checkout || item.data_fim) {
+      addLegacy('utilizacao', itemId, 'checkout_realizado', item.data_checkout || item.data_fim,
+        'Check-out realizado', item.usuario_nome, {
+          condicao_devolucao: item.condicao_devolucao || item.condicao_final,
+          houve_avaria: Boolean(item.houve_avaria)
+        });
+    }
+  });
+  (data.ocorrencias || []).forEach((item) => {
+    const itemId = item.id || item.id_ocorrencia;
+    addLegacy('ocorrencia', itemId, 'ocorrencia_registrada', item.data_registro || item.created_at,
+      'Ocorrência registrada', item.usuario_nome, { titulo: item.titulo, gravidade: item.gravidade });
+  });
+  (data.manutencoes || []).forEach((item) => {
+    const itemId = item.id || item.id_manutencao;
+    addLegacy('manutencao', itemId, 'manutencao_iniciada', item.data_inicio || item.created_at,
+      'Manutenção iniciada', item.responsavel, { tipo: item.tipo, descricao: item.descricao });
+    if (item.data_fim) {
+      addLegacy('manutencao', itemId, 'manutencao_concluida', item.data_fim,
+        'Manutenção concluída', item.responsavel, { laudo_tecnico: item.laudo_tecnico });
+    }
+  });
+
+  return events
+    .filter((event) => event.date && !Number.isNaN(new Date(event.date).getTime()))
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
 export default function EquipamentoDetalhes() {
   const { id } = useParams();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState('');
   const [activeTab, setActiveTab] = useState('utilizacoes');
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
@@ -37,10 +130,14 @@ export default function EquipamentoDetalhes() {
     async function loadHistorico() {
       try {
         setLoading(true);
+        setPageError('');
         const res = await api.get(`/equipamentos/${id}/historico`);
         setData(res.data);
       } catch (err) {
         console.error('[EquipamentoDetalhes] Erro:', err);
+        setPageError(err.response?.status === 404
+          ? ''
+          : err.response?.data?.error || 'Não foi possível carregar o histórico do equipamento.');
       } finally {
         setLoading(false);
       }
@@ -59,7 +156,10 @@ export default function EquipamentoDetalhes() {
   if (!data || !data.equipamento) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-12 text-center">
-        <h2 className="text-lg font-bold text-slate-800">Equipamento não encontrado</h2>
+        <h2 className="text-lg font-bold text-slate-800">
+          {pageError ? 'Erro ao carregar histórico' : 'Equipamento não encontrado'}
+        </h2>
+        {pageError && <p role="alert" className="mt-2 text-sm text-rose-700">{pageError}</p>}
         <Link to="/equipamentos" className="mt-4 inline-block text-xs font-semibold text-teal-600">
           ← Voltar para lista de equipamentos
         </Link>
@@ -68,6 +168,7 @@ export default function EquipamentoDetalhes() {
   }
 
   const equip = data.equipamento;
+  const timeline = buildEquipmentTimeline(data);
   const isInactive = equip.inativo === 1 || equip.inativo === true || (equip.status || '').toLowerCase() === 'inativo';
   const codigoLab = equip.codigo_labcontrol || `LC-EQ-${String(equip.id).padStart(4, '0')}`;
   const codigoUfpi = equip.patrimonio_ufpi || equip.codigo_patrimonio || equip.patrimonio || `UFPI-${equip.id}`;
@@ -220,8 +321,8 @@ export default function EquipamentoDetalhes() {
       </div>
 
       {/* Navegação de Abas do Histórico Unificado */}
-      <div className="border-b border-slate-200">
-        <nav className="flex space-x-6 text-xs font-semibold">
+      <div className="overflow-x-auto border-b border-slate-200">
+        <nav className="flex min-w-max space-x-6 text-xs font-semibold">
           <button
             onClick={() => setActiveTab('utilizacoes')}
             className={`pb-3 border-b-2 transition flex items-center gap-2 ${
@@ -256,6 +357,18 @@ export default function EquipamentoDetalhes() {
           >
             <Wrench className="w-4 h-4" />
             <span>Manutenções ({data.manutencoes?.length || 0})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('auditoria')}
+            className={`pb-3 border-b-2 transition flex items-center gap-2 ${
+              activeTab === 'auditoria'
+                ? 'border-teal-600 text-teal-700 font-bold'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Activity className="w-4 h-4" />
+            <span>Histórico unificado ({timeline.length})</span>
           </button>
         </nav>
       </div>
@@ -425,6 +538,40 @@ export default function EquipamentoDetalhes() {
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'auditoria' && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">Histórico e trilha de auditoria</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Eventos registrados a partir da implantação da auditoria, junto ao histórico operacional já existente.
+              </p>
+            </div>
+            {timeline.length === 0 ? (
+              <p className="py-6 text-center text-xs text-slate-400">Ainda não há eventos para este equipamento.</p>
+            ) : (
+              <ol className="relative ml-2 space-y-4 border-l border-slate-200 pl-5">
+                {timeline.map((event) => (
+                  <li key={event.id} className="relative rounded-xl border border-slate-100 bg-slate-50 p-4">
+                    <span className="absolute -left-[1.62rem] top-4 h-3 w-3 rounded-full border-2 border-white bg-teal-500 shadow" />
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                      <h4 className="text-xs font-bold capitalize text-slate-900">{event.label}</h4>
+                      <time className="shrink-0 text-[10px] text-slate-500">
+                        {new Date(event.date).toLocaleString('pt-BR')}
+                      </time>
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-600">Responsável: {event.user || 'Não identificado'}</p>
+                    {formatEventDetails(event.details) && (
+                      <p className="mt-2 break-words text-[11px] leading-relaxed text-slate-500">
+                        {formatEventDetails(event.details)}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ol>
             )}
           </div>
         )}

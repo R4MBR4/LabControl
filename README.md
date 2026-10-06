@@ -5,8 +5,8 @@ O **LabControl** é um sistema web full-stack desenvolvido para controle, agenda
 > ⚠️ **Importante sobre o Banco de Dados:**
 > Este sistema foi desenvolvido para **consumir o banco de dados MySQL existente** (`labcontrol`) via variáveis de ambiente.
 > Scripts SQL de schema e evolução estão em `database/`. Eles não são executados automaticamente pelo servidor. `database/schema.sql` recria as tabelas-base e contém comandos `DROP`; **não o execute sobre uma base com dados que devam ser preservados**.
-> Para uma base existente, aplique as migrações necessárias de forma controlada. A configuração administrativa da tolerância de no-show requer `database/migrations/07_configuracao_no_show.sql`; o vínculo entre ordens de manutenção e ocorrências requer `database/migrations/08_vinculo_ocorrencia_manutencao.sql`.
-> Tabelas consumidas: `usuario` · `espaco` · `equipamento` · `reserva` · `utilizacao` · `ocorrencia` · `manutencao` · `consumivel` · `capacitacao` · `inventario` · `inventario_item` · `configuracao_sistema`
+> Para uma base existente, aplique as migrações necessárias de forma controlada. A tolerância de no-show requer `database/migrations/07_configuracao_no_show.sql`; o vínculo entre ordens de manutenção e ocorrências requer `database/migrations/08_vinculo_ocorrencia_manutencao.sql`; a trilha de auditoria requer `database/migrations/09_historico_auditoria.sql`.
+> Tabelas consumidas: `usuario` · `espaco` · `equipamento` · `reserva` · `utilizacao` · `ocorrencia` · `manutencao` · `consumivel` · `capacitacao` · `inventario` · `inventario_item` · `configuracao_sistema` · `auditoria_evento`
 
 ---
 
@@ -42,7 +42,7 @@ LabControl/
 │   │   └── dashboardController.js
 │   ├── middlewares/
 │   │   └── auth.js            # Validação de JWT e permissão por perfil
-│   ├── models/                # Camada DAO por entidade do sistema
+│   ├── models/                # Camada DAO por entidade, incluindo trilha de auditoria
 │   ├── routes/                # Rotas RESTful completas
 │   ├── .env.example
 │   ├── package.json
@@ -145,6 +145,7 @@ O aplicativo React estará acessível em: `http://localhost:3000` (ou porta indi
 - **Usuário (Aluno / Professor / Pesquisador):**
   - Autenticação e perfil
   - Consulta de espaços e equipamentos
+  - Visualização do histórico consolidado por equipamento
   - Agendamento e cancelamento de reservas
   - Check-in e Check-out via QR Code
   - Registro de ocorrências
@@ -156,6 +157,7 @@ O aplicativo React estará acessível em: `http://localhost:3000` (ou porta indi
   - Geração e impressão de etiquetas de QR Code
   - Gestão de usuários e permissões
   - Painel com indicadores básicos (dashboard)
+  - Trilha de auditoria com autor, data, ação e detalhes das alterações operacionais
   - Análise e decisão sobre ocorrências
   - Abertura e conclusão de manutenções (bloqueio/desbloqueio)
   - Controle de consumíveis e movimentação de estoque

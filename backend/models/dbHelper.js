@@ -77,10 +77,10 @@ async function update(tableName, id, data, executor = pool) {
 /**
  * Remove um registro por ID
  */
-async function remove(tableName, id) {
+async function remove(tableName, id, executor = pool) {
   const pk = await getPrimaryKey(tableName);
   const sql = `DELETE FROM \`${tableName}\` WHERE \`${pk}\` = ?`;
-  const [result] = await pool.query(sql, [id]);
+  const [result] = await executor.query(sql, [id]);
   return result.affectedRows > 0;
 }
 

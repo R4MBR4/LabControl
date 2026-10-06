@@ -83,7 +83,7 @@ async function getAllEquipamentos(filter = {}) {
   return rows;
 }
 
-async function getEquipamentoById(id) {
+async function getEquipamentoById(id, executor = pool) {
   const pk = await getPrimaryKey(TABLE);
   const espacoPk = await getPrimaryKey('espaco');
   const userPk = await getPrimaryKey('usuario');
@@ -109,7 +109,7 @@ async function getEquipamentoById(id) {
 
   sql += ` WHERE e.\`${pk}\` = ? LIMIT 1`;
 
-  const [rows] = await pool.query(sql, [id]);
+  const [rows] = await executor.query(sql, [id]);
   return rows[0] || null;
 }
 
@@ -124,7 +124,7 @@ async function generateNextLabControlCode() {
   }
 }
 
-async function createEquipamento(data) {
+async function createEquipamento(data, executor = pool) {
   const cols = await getTableColumns(TABLE);
   const payload = { ...data };
 
@@ -141,11 +141,11 @@ async function createEquipamento(data) {
     payload.codigo_patrimonio = payload.patrimonio_ufpi;
   }
 
-  const id = await insert(TABLE, payload);
-  return getEquipamentoById(id);
+  const id = await insert(TABLE, payload, executor);
+  return getEquipamentoById(id, executor);
 }
 
-async function updateEquipamento(id, data) {
+async function updateEquipamento(id, data, executor = pool) {
   const cols = await getTableColumns(TABLE);
   const payload = { ...data };
 
@@ -154,15 +154,15 @@ async function updateEquipamento(id, data) {
     payload.codigo_patrimonio = payload.patrimonio_ufpi;
   }
 
-  await update(TABLE, id, payload);
-  return getEquipamentoById(id);
+  await update(TABLE, id, payload, executor);
+  return getEquipamentoById(id, executor);
 }
 
 /**
  * Inativação lógica com registro de responsável, motivo e data
  * (NÃO exclui fisicamente o equipamento para preservar rastreabilidade histórica)
  */
-async function inativarEquipamento(id, usuarioId, motivo) {
+async function inativarEquipamento(id, usuarioId, motivo, executor = pool) {
   const cols = await getTableColumns(TABLE);
   const payload = {
     status: 'inativo'
@@ -173,14 +173,14 @@ async function inativarEquipamento(id, usuarioId, motivo) {
   if (cols.includes('inativo_por_usuario_id')) payload.inativo_por_usuario_id = usuarioId || null;
   if (cols.includes('motivo_inativacao')) payload.motivo_inativacao = motivo || 'Inativação administrativa sem histórico especificado';
 
-  await update(TABLE, id, payload);
-  return getEquipamentoById(id);
+  await update(TABLE, id, payload, executor);
+  return getEquipamentoById(id, executor);
 }
 
 /**
  * Reativação lógica de equipamento previamente inativo
  */
-async function reativarEquipamento(id) {
+async function reativarEquipamento(id, executor = pool) {
   const cols = await getTableColumns(TABLE);
   const payload = {
     status: 'disponivel'
@@ -191,8 +191,8 @@ async function reativarEquipamento(id) {
   if (cols.includes('inativo_por_usuario_id')) payload.inativo_por_usuario_id = null;
   if (cols.includes('motivo_inativacao')) payload.motivo_inativacao = null;
 
-  await update(TABLE, id, payload);
-  return getEquipamentoById(id);
+  await update(TABLE, id, payload, executor);
+  return getEquipamentoById(id, executor);
 }
 
 /**
@@ -200,7 +200,7 @@ async function reativarEquipamento(id) {
  * Se o equipamento possuir histórico em utilização, ocorrência, manutenção ou reserva,
  * NÃO efetua o DELETE físico. Realiza a inativação automática.
  */
-async function deleteEquipamento(id, usuarioId = null, motivo = null) {
+async function deleteEquipamento(id, usuarioId = null, motivo = null, executor = pool) {
   const equipPk = await getPrimaryKey(TABLE);
   const fkEquipUtilizacao = await resolveColumn('utilizacao', ['equipamento_id', 'id_equipamento']);
   const fkEquipOcorrencia = await resolveColumn('ocorrencia', ['equipamento_id', 'id_equipamento']);
@@ -210,28 +210,34 @@ async function deleteEquipamento(id, usuarioId = null, motivo = null) {
   let totalHistorico = 0;
 
   try {
-    const [uRows] = await pool.query(`SELECT COUNT(*) AS total FROM \`utilizacao\` WHERE \`${fkEquipUtilizacao}\` = ?`, [id]);
+    const [uRows] = await executor.query(`SELECT COUNT(*) AS total FROM \`utilizacao\` WHERE \`${fkEquipUtilizacao}\` = ?`, [id]);
     totalHistorico += Number(uRows[0]?.total || 0);
   } catch {}
 
   try {
-    const [oRows] = await pool.query(`SELECT COUNT(*) AS total FROM \`ocorrencia\` WHERE \`${fkEquipOcorrencia}\` = ?`, [id]);
+    const [oRows] = await executor.query(`SELECT COUNT(*) AS total FROM \`ocorrencia\` WHERE \`${fkEquipOcorrencia}\` = ?`, [id]);
     totalHistorico += Number(oRows[0]?.total || 0);
   } catch {}
 
   try {
-    const [mRows] = await pool.query(`SELECT COUNT(*) AS total FROM \`manutencao\` WHERE \`${fkEquipManutencao}\` = ?`, [id]);
+    const [mRows] = await executor.query(`SELECT COUNT(*) AS total FROM \`manutencao\` WHERE \`${fkEquipManutencao}\` = ?`, [id]);
     totalHistorico += Number(mRows[0]?.total || 0);
   } catch {}
 
   try {
-    const [rRows] = await pool.query(`SELECT COUNT(*) AS total FROM \`reserva\` WHERE \`${fkEquipReserva}\` = ?`, [id]);
+    const [rRows] = await executor.query(`SELECT COUNT(*) AS total FROM \`reserva\` WHERE \`${fkEquipReserva}\` = ?`, [id]);
     totalHistorico += Number(rRows[0]?.total || 0);
   } catch {}
 
+  const [auditRows] = await executor.query(
+    'SELECT COUNT(*) AS total FROM auditoria_evento WHERE equipamento_id = ?',
+    [id]
+  );
+  totalHistorico += Number(auditRows[0]?.total || 0);
+
   if (totalHistorico > 0) {
     // Preserva dados e histórico: inativa o equipamento em vez de deletar
-    const inativado = await inativarEquipamento(id, usuarioId, motivo || 'Inativado automaticamente por possuir registros históricos de uso/manutenção vinculados.');
+    const inativado = await inativarEquipamento(id, usuarioId, motivo || 'Inativado automaticamente por possuir registros históricos de uso/manutenção vinculados.', executor);
     return {
       success: true,
       inativado: true,
@@ -241,7 +247,7 @@ async function deleteEquipamento(id, usuarioId = null, motivo = null) {
   }
 
   // Sem histórico associado: permite remoção física
-  await remove(TABLE, id);
+  await remove(TABLE, id, executor);
   return {
     success: true,
     inativado: false,
@@ -261,7 +267,9 @@ async function updateStatus(id, newStatus, executor) {
  * 3. Manutenções
  */
 async function getEquipamentoHistorico(id) {
-  const equipPk = await getPrimaryKey(TABLE);
+  const utilizacaoPk = await getPrimaryKey('utilizacao');
+  const ocorrenciaPk = await getPrimaryKey('ocorrencia');
+  const manutencaoPk = await getPrimaryKey('manutencao');
   const fkEquipUtilizacao = await resolveColumn('utilizacao', ['equipamento_id', 'id_equipamento']);
   const fkEquipOcorrencia = await resolveColumn('ocorrencia', ['equipamento_id', 'id_equipamento']);
   const fkEquipManutencao = await resolveColumn('manutencao', ['equipamento_id', 'id_equipamento']);
@@ -269,54 +277,33 @@ async function getEquipamentoHistorico(id) {
   const fkUserUtilizacao = await resolveColumn('utilizacao', ['usuario_id', 'id_usuario']);
   const fkUserOcorrencia = await resolveColumn('ocorrencia', ['usuario_id', 'id_usuario']);
 
-  // 1. Utilizações
-  let utilizacoes = [];
-  try {
-    const [rows] = await pool.query(`
+  const [utilizacoesRows, ocorrenciasRows, manutencoesRows] = await Promise.all([
+    pool.query(`
       SELECT u.*, us.nome AS usuario_nome, us.email AS usuario_email
       FROM \`utilizacao\` u
       LEFT JOIN \`usuario\` us ON u.\`${fkUserUtilizacao}\` = us.\`${userPk}\`
       WHERE u.\`${fkEquipUtilizacao}\` = ?
-      ORDER BY u.id DESC
-    `, [id]);
-    utilizacoes = rows;
-  } catch (err) {
-    console.warn('[Equipamento] Histórico utilizacao:', err.message);
-  }
-
-  // 2. Ocorrências
-  let ocorrencias = [];
-  try {
-    const [rows] = await pool.query(`
+      ORDER BY u.\`${utilizacaoPk}\` DESC
+    `, [id]),
+    pool.query(`
       SELECT o.*, us.nome AS usuario_nome
       FROM \`ocorrencia\` o
       LEFT JOIN \`usuario\` us ON o.\`${fkUserOcorrencia}\` = us.\`${userPk}\`
       WHERE o.\`${fkEquipOcorrencia}\` = ?
-      ORDER BY o.id DESC
-    `, [id]);
-    ocorrencias = rows;
-  } catch (err) {
-    console.warn('[Equipamento] Histórico ocorrencia:', err.message);
-  }
-
-  // 3. Manutenções
-  let manutencoes = [];
-  try {
-    const [rows] = await pool.query(`
+      ORDER BY o.\`${ocorrenciaPk}\` DESC
+    `, [id]),
+    pool.query(`
       SELECT m.*
       FROM \`manutencao\` m
       WHERE m.\`${fkEquipManutencao}\` = ?
-      ORDER BY m.id DESC
-    `, [id]);
-    manutencoes = rows;
-  } catch (err) {
-    console.warn('[Equipamento] Histórico manutencao:', err.message);
-  }
+      ORDER BY m.\`${manutencaoPk}\` DESC
+    `, [id])
+  ]);
 
   return {
-    utilizacoes,
-    ocorrencias,
-    manutencoes
+    utilizacoes: utilizacoesRows[0],
+    ocorrencias: ocorrenciasRows[0],
+    manutencoes: manutencoesRows[0]
   };
 }
 

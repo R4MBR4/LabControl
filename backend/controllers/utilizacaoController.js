@@ -3,6 +3,7 @@ const equipamentoModel = require('../models/equipamentoModel');
 const capacitacaoModel = require('../models/capacitacaoModel');
 const ocorrenciaModel = require('../models/ocorrenciaModel');
 const { pool } = require('../models/dbHelper');
+const auditoriaModel = require('../models/auditoriaModel');
 
 async function list(req, res) {
   try {
@@ -43,6 +44,9 @@ async function getById(req, res) {
  * Funcionalidade obrigatória 5: Check-in via QR Code
  */
 async function checkin(req, res) {
+  let connection;
+  let transactionStarted = false;
+
   try {
     const { equipamento_id, reserva_id, condicao_inicial, observacoes } = req.body;
     const usuario_id = req.user.id;
@@ -95,18 +99,32 @@ async function checkin(req, res) {
       observacoes: observacoes || ''
     };
 
-    const novaUtilizacao = await utilizacaoModel.createCheckin(payload);
-
-    // Atualiza status do equipamento para 'em_uso'
-    await equipamentoModel.updateStatus(equipamento_id, 'em_uso');
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const novaUtilizacao = await utilizacaoModel.createCheckin(payload, connection);
+    await equipamentoModel.updateStatus(equipamento_id, 'em_uso', connection);
+    await auditoriaModel.registrarEvento({
+      equipamento_id,
+      entidade: 'utilizacao',
+      entidade_id: novaUtilizacao.id || novaUtilizacao.id_utilizacao,
+      acao: 'checkin_realizado',
+      usuario_id,
+      detalhes: { reserva_id: reserva_id || null, condicao_inicial: payload.condicao_inicial }
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
 
     res.status(201).json({
       message: 'Check-in realizado com sucesso!',
       utilizacao: novaUtilizacao
     });
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Utilizacao] Erro no checkin:', err);
     res.status(500).json({ error: 'Erro ao realizar check-in: ' + err.message });
+  } finally {
+    if (connection) connection.release();
   }
 }
 
@@ -207,6 +225,14 @@ async function checkout(req, res) {
         foto_evidencia,
         foto_metadata: serializedPhotoMetadata
       }, connection);
+      await auditoriaModel.registrarEvento({
+        equipamento_id: targetEquipId,
+        entidade: 'ocorrencia',
+        entidade_id: ocorrencia.id || ocorrencia.id_ocorrencia,
+        acao: 'ocorrencia_registrada',
+        usuario_id,
+        detalhes: { titulo: ocorrencia.titulo, gravidade: ocorrencia.gravidade, origem: 'checkout' }
+      }, connection);
     }
 
     const utilizacaoAtualizada = await utilizacaoModel.executeCheckout(utilizationId, {
@@ -225,6 +251,18 @@ async function checkout(req, res) {
       isDamaged ? 'manutencao' : 'disponivel',
       connection
     );
+    await auditoriaModel.registrarEvento({
+      equipamento_id: targetEquipId,
+      entidade: 'utilizacao',
+      entidade_id: utilizationId,
+      acao: 'checkout_realizado',
+      usuario_id,
+      detalhes: {
+        condicao_devolucao: condition,
+        houve_avaria: isDamaged,
+        ocorrencia_id: ocorrencia?.id || ocorrencia?.id_ocorrencia || null
+      }
+    }, connection);
 
     await connection.commit();
     transactionStarted = false;

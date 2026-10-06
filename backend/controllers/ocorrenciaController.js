@@ -2,6 +2,7 @@ const ocorrenciaModel = require('../models/ocorrenciaModel');
 const equipamentoModel = require('../models/equipamentoModel');
 const manutencaoModel = require('../models/manutencaoModel');
 const { pool } = require('../models/dbHelper');
+const auditoriaModel = require('../models/auditoriaModel');
 
 async function list(req, res) {
   try {
@@ -39,6 +40,9 @@ async function getById(req, res) {
 }
 
 async function create(req, res) {
+  let connection;
+  let transactionStarted = false;
+
   try {
     const { equipamento_id, utilizacao_id, espaco_id, titulo, descricao, gravidade, foto_evidencia, foto_metadata } = req.body;
     const usuario_id = req.user.id;
@@ -60,11 +64,27 @@ async function create(req, res) {
       foto_metadata: foto_metadata ? (typeof foto_metadata === 'object' ? JSON.stringify(foto_metadata) : String(foto_metadata)) : null
     };
 
-    const nova = await ocorrenciaModel.createOcorrencia(payload);
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const nova = await ocorrenciaModel.createOcorrencia(payload, connection);
+    await auditoriaModel.registrarEvento({
+      equipamento_id: nova.equipamento_id,
+      entidade: 'ocorrencia',
+      entidade_id: nova.id || nova.id_ocorrencia,
+      acao: 'ocorrencia_registrada',
+      usuario_id,
+      detalhes: { titulo, gravidade: payload.gravidade, status: payload.status }
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
     res.status(201).json(nova);
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Ocorrencia] Erro ao registrar:', err);
     res.status(500).json({ error: 'Erro ao registrar ocorrência' });
+  } finally {
+    if (connection) connection.release();
   }
 }
 
@@ -128,6 +148,18 @@ async function decidir(req, res) {
           responsavel: 'A definir',
           status: 'em_andamento'
         }, connection);
+        await auditoriaModel.registrarEvento({
+          equipamento_id: equipId,
+          entidade: 'manutencao',
+          entidade_id: manutencao.id || manutencao.id_manutencao,
+          acao: 'manutencao_iniciada',
+          usuario_id: req.user.id,
+          detalhes: {
+            tipo: manutencao.tipo,
+            descricao: manutencao.descricao,
+            ocorrencia_id: ocorrencia.id || ocorrencia.id_ocorrencia
+          }
+        }, connection);
       } else {
         await equipamentoModel.updateStatus(equipId, 'manutencao', connection);
       }
@@ -140,6 +172,18 @@ async function decidir(req, res) {
       resposta_admin: decisao_admin.trim(),
       data_decisao: new Date(),
       data_resolucao: statusAtualizado === 'resolvida' ? new Date() : null
+    }, connection);
+    await auditoriaModel.registrarEvento({
+      equipamento_id: equipId,
+      entidade: 'ocorrencia',
+      entidade_id: req.params.id,
+      acao: 'decisao_administrativa_registrada',
+      usuario_id: req.user.id,
+      detalhes: {
+        status: statusAtualizado,
+        decisao: decisao_admin.trim(),
+        manutencao_id: manutencao?.id || manutencao?.id_manutencao || null
+      }
     }, connection);
 
     await connection.commit();

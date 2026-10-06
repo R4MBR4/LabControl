@@ -1,4 +1,6 @@
 const manutencaoModel = require('../models/manutencaoModel');
+const auditoriaModel = require('../models/auditoriaModel');
+const { pool } = require('../models/dbHelper');
 
 async function list(req, res) {
   try {
@@ -31,6 +33,9 @@ async function getById(req, res) {
  * Passo 1 e 2 do fluxo: Bloqueio do equipamento e registro da manutenção
  */
 async function create(req, res) {
+  let connection;
+  let transactionStarted = false;
+
   try {
     const { equipamento_id, descricao, tipo, custo, responsavel, ocorrencia_id } = req.body;
 
@@ -41,6 +46,9 @@ async function create(req, res) {
       return res.status(400).json({ error: 'O custo da manutenção deve ser um número igual ou maior que zero.' });
     }
 
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
     const nova = await manutencaoModel.createManutencao({
       equipamento_id,
       ocorrencia_id: ocorrencia_id || null,
@@ -49,15 +57,28 @@ async function create(req, res) {
       custo: custo || 0,
       responsavel: responsavel || req.user.nome,
       status: 'em_andamento'
-    });
+    }, connection);
+    await auditoriaModel.registrarEvento({
+      equipamento_id,
+      entidade: 'manutencao',
+      entidade_id: nova.id || nova.id_manutencao,
+      acao: 'manutencao_iniciada',
+      usuario_id: req.user.id,
+      detalhes: { tipo: nova.tipo, descricao: nova.descricao, ocorrencia_id: nova.ocorrencia_id || null }
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
 
     res.status(201).json({
       message: 'Manutenção registrada e equipamento bloqueado com sucesso',
       manutencao: nova
     });
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Manutencao] Erro ao cadastrar:', err);
     res.status(500).json({ error: 'Erro ao iniciar manutenção: ' + err.message });
+  } finally {
+    if (connection) connection.release();
   }
 }
 
@@ -65,6 +86,9 @@ async function create(req, res) {
  * Passo 3 e 4 do fluxo: Conclusão da manutenção e retorno ao status 'disponivel'
  */
 async function concluir(req, res) {
+  let connection;
+  let transactionStarted = false;
+
   try {
     const { observacoes, laudo_tecnico, custo } = req.body;
     const laudo = typeof laudo_tecnico === 'string' ? laudo_tecnico.trim() : '';
@@ -84,11 +108,28 @@ async function concluir(req, res) {
       return res.status(409).json({ error: 'Esta ordem de manutenção já foi concluída ou cancelada.' });
     }
 
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
     const atualizada = await manutencaoModel.finalizarManutencao(req.params.id, {
       laudo_tecnico: laudo,
       observacoes: observacoes || laudo,
       custo: custo !== undefined ? custo : undefined
-    });
+    }, connection);
+    await auditoriaModel.registrarEvento({
+      equipamento_id: atualizada.equipamento_id || atualizada.id_equipamento,
+      entidade: 'manutencao',
+      entidade_id: req.params.id,
+      acao: 'manutencao_concluida',
+      usuario_id: req.user.id,
+      detalhes: {
+        laudo_tecnico: laudo,
+        custo: custo !== undefined ? custo : atualizada.custo,
+        equipamento_liberado: (atualizada.equipamento_status || '').toLowerCase() === 'disponivel'
+      }
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
 
     res.json({
       message: 'Manutenção concluída. A disponibilidade do equipamento foi revisada considerando seu estado e outras ordens abertas.',
@@ -96,12 +137,18 @@ async function concluir(req, res) {
       manutencao: atualizada
     });
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Manutencao] Erro ao concluir:', err);
     res.status(500).json({ error: 'Erro ao concluir manutenção: ' + err.message });
+  } finally {
+    if (connection) connection.release();
   }
 }
 
 async function update(req, res) {
+  let connection;
+  let transactionStarted = false;
+
   try {
     const payload = {};
     for (const key of ['tipo', 'descricao', 'custo', 'responsavel']) {
@@ -114,14 +161,32 @@ async function update(req, res) {
       return res.status(400).json({ error: 'O custo da manutenção deve ser um número igual ou maior que zero.' });
     }
 
-    const updated = await manutencaoModel.updateManutencao(req.params.id, payload);
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const updated = await manutencaoModel.updateManutencao(req.params.id, payload, connection);
     if (!updated) {
+      await connection.rollback();
+      transactionStarted = false;
       return res.status(404).json({ error: 'Manutenção não encontrada' });
     }
+    await auditoriaModel.registrarEvento({
+      equipamento_id: updated.equipamento_id || updated.id_equipamento,
+      entidade: 'manutencao',
+      entidade_id: req.params.id,
+      acao: 'manutencao_atualizada',
+      usuario_id: req.user.id,
+      detalhes: { campos_alterados: Object.keys(payload) }
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
     res.json(updated);
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Manutencao] Erro ao atualizar:', err);
     res.status(500).json({ error: 'Erro ao atualizar manutenção' });
+  } finally {
+    if (connection) connection.release();
   }
 }
 

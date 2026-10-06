@@ -3,8 +3,8 @@ const { pool, getPrimaryKey, insert, update, remove, findById, findAll, resolveC
 const TABLE = 'reserva';
 const NO_SHOW_TOLERANCE_KEY = 'tolerancia_no_show_minutos';
 
-async function getToleranciaNoShow() {
-  const [rows] = await pool.query(
+async function getToleranciaNoShow(executor = pool) {
+  const [rows] = await executor.query(
     'SELECT valor FROM `configuracao_sistema` WHERE chave = ? LIMIT 1',
     [NO_SHOW_TOLERANCE_KEY]
   );
@@ -14,8 +14,8 @@ async function getToleranciaNoShow() {
   return Number(rows[0].valor);
 }
 
-async function setToleranciaNoShow(minutos, usuarioId) {
-  await pool.query(`
+async function setToleranciaNoShow(minutos, usuarioId, executor = pool) {
+  await executor.query(`
     INSERT INTO \`configuracao_sistema\` (chave, valor, atualizado_por_usuario_id)
     VALUES (?, ?, ?)
     ON DUPLICATE KEY UPDATE
@@ -23,7 +23,7 @@ async function setToleranciaNoShow(minutos, usuarioId) {
       atualizado_por_usuario_id = VALUES(atualizado_por_usuario_id),
       atualizado_em = CURRENT_TIMESTAMP
   `, [NO_SHOW_TOLERANCE_KEY, String(minutos), usuarioId || null]);
-  return getToleranciaNoShow();
+  return getToleranciaNoShow(executor);
 }
 
 async function getAllReservas(filters = {}) {
@@ -130,7 +130,7 @@ async function getAllReservas(filters = {}) {
   return rows;
 }
 
-async function getReservaById(id) {
+async function getReservaById(id, executor = pool) {
   const pk = await getPrimaryKey(TABLE);
   const userPk = await getPrimaryKey('usuario');
   const equipPk = await getPrimaryKey('equipamento');
@@ -154,7 +154,7 @@ async function getReservaById(id) {
     WHERE r.\`${pk}\` = ?
     LIMIT 1
   `;
-  const [rows] = await pool.query(sql, [id]);
+  const [rows] = await executor.query(sql, [id]);
   return rows[0] || null;
 }
 
@@ -257,18 +257,18 @@ async function getReservasCalendario({ inicio, fim, espaco_id, equipamento_id })
   return rows;
 }
 
-async function createReserva(data) {
-  const id = await insert(TABLE, data);
-  return getReservaById(id);
+async function createReserva(data, executor = pool) {
+  const id = await insert(TABLE, data, executor);
+  return getReservaById(id, executor);
 }
 
-async function updateReserva(id, data) {
-  await update(TABLE, id, data);
-  return getReservaById(id);
+async function updateReserva(id, data, executor = pool) {
+  await update(TABLE, id, data, executor);
+  return getReservaById(id, executor);
 }
 
-async function cancelReserva(id) {
-  return updateReserva(id, { status: 'cancelada' });
+async function cancelReserva(id, executor = pool) {
+  return updateReserva(id, { status: 'cancelada' }, executor);
 }
 
 /**
@@ -283,7 +283,8 @@ async function createSerieRecorrente({
   finalidade,
   observacoes,
   regra_recorrencia,
-  tolerancia_no_show_min = 15
+  tolerancia_no_show_min = 15,
+  executor = pool
 }) {
   if (!ocorrencias || ocorrencias.length === 0) {
     throw new Error('Nenhuma ocorrência fornecida para a série recorrente.');
@@ -331,7 +332,7 @@ async function createSerieRecorrente({
       regra_recorrencia: regra_recorrencia || 'semanal',
       tolerancia_no_show_min: Number(tolerancia_no_show_min) || 15
     };
-    const id = await insert(TABLE, payload);
+    const id = await insert(TABLE, payload, executor);
     criadas.push(id);
   }
 
@@ -348,23 +349,23 @@ async function createSerieRecorrente({
  * Opções: 'apenas_esta' | 'proximas' | 'toda_serie'
  * Caso mínimo obrigatório: liberar uma ocorrência individual sem destruir a série inteira.
  */
-async function cancelarOcorrenciaRecorrente(id, tipo = 'apenas_esta') {
-  const reserva = await getReservaById(id);
+async function cancelarOcorrenciaRecorrente(id, tipo = 'apenas_esta', executor = pool) {
+  const reserva = await getReservaById(id, executor);
   if (!reserva) return null;
 
   if (!reserva.grupo_recorrencia_id || tipo === 'apenas_esta') {
     // Cancela apenas esta ocorrência individual
-    await update(TABLE, id, { status: 'cancelada' });
+    await update(TABLE, id, { status: 'cancelada' }, executor);
     return {
       tipo: 'apenas_esta',
       afetadas: 1,
-      reserva: await getReservaById(id)
+      reserva: await getReservaById(id, executor)
     };
   }
 
   if (tipo === 'proximas') {
     // Cancela esta e todas as ocorrências futuras da mesma série
-    const [result] = await pool.query(`
+    const [result] = await executor.query(`
       UPDATE \`${TABLE}\`
       SET status = 'cancelada'
       WHERE grupo_recorrencia_id = ? AND data_inicio >= ? AND status != 'cancelada'
@@ -379,7 +380,7 @@ async function cancelarOcorrenciaRecorrente(id, tipo = 'apenas_esta') {
 
   if (tipo === 'toda_serie') {
     // Cancela toda a série recorrente
-    const [result] = await pool.query(`
+    const [result] = await executor.query(`
       UPDATE \`${TABLE}\`
       SET status = 'cancelada'
       WHERE grupo_recorrencia_id = ? AND status != 'cancelada'
@@ -399,30 +400,30 @@ async function cancelarOcorrenciaRecorrente(id, tipo = 'apenas_esta') {
  * Marcação de No-Show com tolerância (Bloco 08)
  * Regra: Não aplicar punição automática. Preservar histórico para indicadores.
  */
-async function marcarNoShow(id) {
-  const reserva = await getReservaById(id);
+async function marcarNoShow(id, executor = pool) {
+  const reserva = await getReservaById(id, executor);
   if (!reserva) return null;
 
   await update(TABLE, id, {
     no_show: 1,
     no_show_at: new Date(),
     status: 'no_show'
-  });
+  }, executor);
 
-  return getReservaById(id);
+  return getReservaById(id, executor);
 }
 
 /**
  * Verificação em lote de no-shows baseada na tolerância configurável (Bloco 08)
  */
-async function verificarNoShowsAutomaticos(toleranciaMin = 15) {
+async function verificarNoShowsAutomaticos(toleranciaMin = 15, executor = pool) {
   const toleranciaConfigurada = Number(toleranciaMin);
   if (!Number.isInteger(toleranciaConfigurada) || toleranciaConfigurada < 1 || toleranciaConfigurada > 180) {
     throw new Error('A tolerância para no-show deve estar entre 1 e 180 minutos.');
   }
 
   // Busca reservas confirmadas cujo início + tolerância já passou, e que não possuem utilização iniciada
-  const [candidatos] = await pool.query(`
+  const [candidatos] = await executor.query(`
     SELECT r.id, r.usuario_id, r.data_inicio, r.finalidade
     FROM \`${TABLE}\` r
     WHERE r.status IN ('confirmada', 'pendente')
@@ -435,7 +436,7 @@ async function verificarNoShowsAutomaticos(toleranciaMin = 15) {
 
   if (candidatos.length > 0) {
     const ids = candidatos.map(c => c.id);
-    await pool.query(`
+    await executor.query(`
       UPDATE \`${TABLE}\`
       SET no_show = 1, no_show_at = NOW(), status = 'no_show'
       WHERE id IN (?)
