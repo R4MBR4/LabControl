@@ -34,7 +34,7 @@ LabControl/
 │   ├── migrate.js                 # Script de execução do schema.sql
 │   └── package.json               # Dependências do backend
 ├── database/
-│   └── schema.sql                 # DDL das 9 tabelas e dados seed iniciais
+│   └── schema.sql                 # DDL das tabelas e dados seed iniciais
 └── frontend/
     ├── src/
     │   ├── components/
@@ -44,7 +44,7 @@ LabControl/
     │   │   └── QRScanner.jsx      # Scanner com câmera e leitura de arquivo
     │   ├── context/
     │   │   └── AuthContext.jsx    # Gerenciamento de sessão, token e usuário
-    │   ├── pages/                 # 11 páginas implementadas (SPA)
+    │   ├── pages/                 # 15 páginas implementadas (SPA)
     │   ├── services/
     │   │   ├── api.js             # Instância Axios com interceptors e fallback
     │   │   └── mockData.js        # Fallback offline para demonstração
@@ -56,7 +56,7 @@ LabControl/
 
 ---
 
-## 2. Inventário do Banco de Dados Atual (9 Tabelas)
+## 2. Inventário do Banco de Dados Atual (12 Tabelas)
 
 | Tabela | Chave Primária | Foreign Keys | Índices Relevantes | Finalidade |
 |---|---|---|---|---|
@@ -69,6 +69,9 @@ LabControl/
 | `manutencao` | `id` (AUTO_INCREMENT) | `fk_manutencao_equipamento` $\rightarrow$ `equipamento(id)` | `idx_manutencao_status` | Ordens de manutenção preventiva e corretiva |
 | `consumivel` | `id` (AUTO_INCREMENT) | `fk_consumivel_espaco` $\rightarrow$ `espaco(id)` | Nenhum | Controle de insumos com estoque mínimo |
 | `capacitacao` | `id` (AUTO_INCREMENT) | `fk_capacitacao_usuario`, `fk_capacitacao_equipamento` | Nenhum | Habilitação prévia para equipamentos críticos |
+| `inventario` | `id` (AUTO_INCREMENT) | `fk_inventario_espaco`, `fk_inventario_usuario` | `idx_inventario_espaco`, `idx_inventario_status` | Sessões de inventário por laboratório |
+| `inventario_item` | `id` (AUTO_INCREMENT) | Inventário, equipamento, espaços esperado/encontrado e usuário da decisão | `idx_invitem_sessao`, `idx_invitem_equip`, `idx_invitem_status` | Leituras, divergências e itens não localizados |
+| `configuracao_sistema` | `chave` | `fk_config_sistema_usuario` $\rightarrow$ `usuario(id)` | Chave primária | Configurações administrativas, incluindo tolerância de no-show |
 
 ---
 
@@ -87,6 +90,9 @@ LabControl/
   * `POST /`, `PUT /:id`, `DELETE /:id`: Restritos a administradores.
 * **`/api/reservas`**:
   * `GET /`, `GET /:id`, `POST /`: Solicitação e listagem com escopo por perfil.
+  * `GET /calendario`: Eventos do calendário.
+  * `GET/PUT /configuracao/no-show`: Leitura e alteração administrativa da tolerância.
+  * `POST /recorrente`, `PUT /:id/cancelar-recorrencia`, `POST /verificar-no-shows`: Séries e no-show.
   * `PUT /:id/cancelar`: Cancelamento pelo solicitante ou administrador.
   * `PUT /:id/status`: Atualização restrita.
 * **`/api/utilizacoes`**:
@@ -108,7 +114,10 @@ LabControl/
   * `GET /`, `GET /usuario/:userId`, `GET /verificar/:equipamentoId`: Validação de autorizações.
   * `POST /`, `PUT /:id`, `DELETE /:id`: Gestão por administradores.
 * **`/api/dashboard`**:
-  * `GET /metricas`: Totalizadores e alertas de estoque crítico.
+  * `GET /metricas` (Admin): KPIs operacionais, utilização atual, alertas e séries para gráficos.
+* **`/api/inventarios`**:
+  * `GET /`, `GET /:id`: Consulta de sessões e itens.
+  * `POST /`, `POST /:id/scan`, `POST /:id/decidir-divergencia`, `POST /:id/finalizar`: Operações administrativas.
 * **`/tabelas`**:
   * `GET /`: Interface web para inspeção direta das tabelas no banco de dados.
 
@@ -134,10 +143,9 @@ LabControl/
 
 ---
 
-## 5. Plano de Execução dos Próximos Blocos
+## 5. Estado após os blocos de reservas e dashboard
 
-* **Bloco 02 — Equipamentos:** Adicionar identificadores (Patrimônio UFPI vs Código LabControl interno), campos técnicos, fotos administrativas e fluxo de inativação lógica sem perda de histórico.
-* **Bloco 03 — QR Code:** Geração em lote com seleção múltipla e folha imprimível completa.
-* **Bloco 04 — Fotografias:** Captura estrita via câmera para evidência probatória (ocorrência/check-out) sem opção de galeria.
-* **Bloco 05 — Inventário por QR:** Leitura sequencial por laboratório, confronto de localização e tela de decisão administrativa.
-* **Bloco 06 a 16:** Seguir rigorosamente a ordem incremental da especificação.
+* **Tolerância de no-show:** Configuração administrativa persistida em `configuracao_sistema`; aplicar `database/migrations/07_configuracao_no_show.sql` em bancos existentes.
+* **Dashboard administrativo:** KPIs de equipamentos, espaços, reservas, ocorrências, manutenção e estoque; utilização atual; alertas operacionais e gráficos compactos. Erros da consulta são reportados, sem valores demonstrativos substituindo métricas reais.
+* **Validação realizada:** build de produção do frontend, verificação de sintaxe do backend e testes de contrato com resultados simulados. A integração com uma base MySQL configurada não foi executada nesta etapa.
+* **Próximo bloco recomendado — Ocorrências e manutenção:** consolidar o fluxo de evidência e decisão, garantir falha explícita se o check-out não conseguir registrar a ocorrência e preservar o histórico administrativo.

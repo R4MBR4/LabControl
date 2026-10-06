@@ -270,30 +270,150 @@ export function handleMockRequest(method, url, data) {
 
   // 2. DASHBOARD
   if (cleanUrl === '/dashboard/metricas') {
-    const espTotal = db.espacos.length;
-    const eqTotal = db.equipamentos.length;
-    const eqDisp = db.equipamentos.filter(e => e.status === 'DISPONIVEL').length;
-    const eqUso = db.equipamentos.filter(e => e.status === 'EM_USO').length;
-    const eqMan = db.equipamentos.filter(e => e.status === 'MANUTENCAO').length;
-    const resAtivas = db.reservas.filter(r => (r.status || '').toLowerCase() !== 'cancelada').length;
-    const ocAbertas = db.ocorrencias.filter(o => o.status !== 'RESOLVIDA').length;
-    const manAtivas = db.manutencoes.filter(m => m.status !== 'CONCLUIDA').length;
-    const criticos = db.consumiveis.filter(c => c.estoque_critico);
+    const now = Date.now();
+    const status = (value) => String(value || '').toLowerCase();
+    const ativos = (value) => !['cancelada', 'cancelado', 'no_show'].includes(status(value));
+    const criticos = db.consumiveis.filter(c => Number(c.quantidade) <= Number(c.quantidade_minima));
+    const utilizacoesAtivas = db.utilizacoes.filter(u => status(u.status) === 'em_uso');
+    const reservasAtivas = db.reservas.filter(r =>
+      ['confirmada', 'em_andamento'].includes(status(r.status)) &&
+      new Date(r.data_inicio).getTime() <= now &&
+      new Date(r.data_fim).getTime() >= now
+    );
+    const espacosOcupadosIds = new Set([
+      ...reservasAtivas.filter(r => !r.equipamento_id).map(r => r.espaco_id),
+      ...utilizacoesAtivas.map(u => db.equipamentos.find(e => e.id === u.equipamento_id)?.espaco_id)
+    ].filter(Boolean));
+    const hoje = new Date().toISOString().slice(0, 10);
+    const reservasFuturas = db.reservas.filter(r => ativos(r.status) && new Date(r.data_inicio).getTime() > now);
+    const reservasHoje = db.reservas.filter(r => ativos(r.status) && String(r.data_inicio).slice(0, 10) === hoje);
+    const ocorrenciasAbertas = db.ocorrencias.filter(o => ['aberta', 'em_analise', 'pendente'].includes(status(o.status)));
+    const manutencoesAbertas = db.manutencoes.filter(m => !['concluida', 'concluído', 'concluido', 'cancelada', 'cancelado'].includes(status(m.status)));
+    const currentUsage = [
+      ...utilizacoesAtivas.map(u => {
+        const equip = db.equipamentos.find(e => e.id === u.equipamento_id);
+        const reserva = db.reservas.find(r => r.id === u.reserva_id);
+        return {
+          id: u.id,
+          usuario_nome: u.usuario_nome || db.usuarios.find(user => user.id === u.usuario_id)?.nome,
+          recurso_nome: equip?.nome,
+          espaco_nome: equip?.espaco_nome,
+          data_inicio: u.data_inicio,
+          data_fim_previsto: reserva?.data_fim || null,
+          reserva_id: u.reserva_id || null,
+          tipo_recurso: 'equipamento'
+        };
+      }),
+      ...reservasAtivas.filter(r => !r.equipamento_id).map(r => ({
+        id: r.id,
+        usuario_nome: r.usuario_nome,
+        recurso_nome: r.espaco_nome,
+        espaco_nome: r.espaco_nome,
+        data_inicio: r.data_inicio,
+        data_fim_previsto: r.data_fim,
+        reserva_id: r.id,
+        tipo_recurso: 'espaco'
+      }))
+    ];
+    const equipmentUsage = new Map();
+    db.utilizacoes.forEach(u => equipmentUsage.set(u.equipamento_id, (equipmentUsage.get(u.equipamento_id) || 0) + 1));
+    const recurrentMaintenance = new Map();
+    db.manutencoes.forEach(m => recurrentMaintenance.set(m.equipamento_id, (recurrentMaintenance.get(m.equipamento_id) || 0) + 1));
+    const seriesForDates = (source, dateField) => {
+      const grouped = new Map();
+      source.forEach(item => {
+        const date = String(item[dateField] || '').slice(0, 10);
+        if (date) grouped.set(date, (grouped.get(date) || 0) + 1);
+      });
+      return [...grouped].map(([label, total]) => ({ label, total }));
+    };
 
     return ok({
-      espacos: { total: espTotal },
-      equipamentos: {
-        total: eqTotal,
-        disponiveis: eqDisp,
-        em_uso: eqUso,
-        manutencao: eqMan
+      gerado_em: new Date().toISOString(),
+      espacos: {
+        total: db.espacos.length,
+        disponiveis: db.espacos.filter(s => status(s.status).includes('disponivel') && !espacosOcupadosIds.has(s.id)).length,
+        ocupados: espacosOcupadosIds.size,
+        indisponiveis: db.espacos.filter(s => !status(s.status).includes('disponivel')).length
       },
-      reservas: { ativas: resAtivas },
-      ocorrencias: { abertas: ocAbertas },
-      manutencoes: { em_andamento: manAtivas },
+      equipamentos: {
+        total: db.equipamentos.length,
+        disponiveis: db.equipamentos.filter(e => status(e.status).includes('disponivel') && !e.inativo).length,
+        em_uso: db.equipamentos.filter(e => status(e.status) === 'em_uso' && !e.inativo).length,
+        manutencao: db.equipamentos.filter(e => status(e.status).includes('manutencao') && !e.inativo).length,
+        inativos: db.equipamentos.filter(e => e.inativo || status(e.status) === 'inativo').length,
+        nao_localizados: db.inventarios?.flatMap(i => i.itens || []).filter(i => status(i.status_conferencia) === 'nao_localizado').length || 0
+      },
+      reservas: {
+        hoje: reservasHoje.length,
+        futuras: reservasFuturas.length,
+        em_andamento: reservasAtivas.length,
+        canceladas: db.reservas.filter(r => ['cancelada', 'cancelado'].includes(status(r.status))).length,
+        no_show: db.reservas.filter(r => r.no_show || status(r.status) === 'no_show').length
+      },
+      ocorrencias: {
+        abertas: ocorrenciasAbertas.length,
+        recentes: db.ocorrencias.filter(o => now - new Date(o.data_registro || o.data_criacao || now).getTime() <= 30 * 86400000).length,
+        com_manutencao: ocorrenciasAbertas.filter(o => manutencoesAbertas.some(m => m.equipamento_id === o.equipamento_id)).length,
+        por_gravidade: ['alta', 'media', 'baixa'].map(label => ({
+          label,
+          total: ocorrenciasAbertas.filter(o => status(o.gravidade || o.prioridade) === label).length
+        }))
+      },
+      manutencoes: {
+        abertas: manutencoesAbertas.length,
+        concluidas: db.manutencoes.filter(m => status(m.status) === 'concluida').length,
+        recorrentes: [...recurrentMaintenance].filter(([, total]) => total >= 2).map(([id, total]) => ({
+          equipamento_id: id,
+          equipamento_nome: db.equipamentos.find(e => e.id === id)?.nome,
+          total
+        })),
+        tempo_medio_horas: null
+      },
       consumiveis: {
-        total_criticos: criticos.length,
+        abaixo_minimo: criticos.length,
+        criticos: criticos.filter(c => Number(c.quantidade) <= 0).length,
         itens_criticos: criticos
+      },
+      em_utilizacao_agora: currentUsage,
+      proximas_reservas: reservasFuturas.slice(0, 6),
+      ocorrencias_pendentes: ocorrenciasAbertas.slice(0, 6),
+      manutencoes_pendentes: manutencoesAbertas.slice(0, 6),
+      no_shows_recentes: db.reservas.filter(r => r.no_show || status(r.status) === 'no_show').slice(0, 6),
+      alertas: {
+        manutencoes_pendentes: manutencoesAbertas.length,
+        ocorrencias_abertas: ocorrenciasAbertas.length,
+        inventarios_incompletos: db.inventarios?.filter(i => status(i.status) === 'em_andamento').length || 0,
+        divergencias_localizacao: db.inventarios?.flatMap(i => i.itens || []).filter(i => status(i.status_conferencia) === 'divergente' && status(i.decisao_admin) === 'pendente').length || 0,
+        equipamentos_nao_localizados: db.inventarios?.flatMap(i => i.itens || []).filter(i => status(i.status_conferencia) === 'nao_localizado').length || 0,
+        estoque_baixo: criticos.length,
+        capacitacoes_vencidas: db.capacitacoes.filter(c => c.validade && new Date(c.validade).getTime() < now).length,
+        reservas_proximas: reservasFuturas.filter(r => new Date(r.data_inicio).getTime() < now + 86400000).length,
+        no_shows: db.reservas.filter(r => r.no_show || status(r.status) === 'no_show').length
+      },
+      graficos: {
+        utilizacao_por_laboratorio: [...new Set(db.equipamentos.map(e => e.espaco_nome).filter(Boolean))].map(label => ({
+          label,
+          total: utilizacoesAtivas.filter(u => db.equipamentos.find(e => e.id === u.equipamento_id)?.espaco_nome === label).length
+        })),
+        equipamentos_mais_utilizados: [...equipmentUsage].map(([id, total]) => ({
+          label: db.equipamentos.find(e => e.id === id)?.nome || `Equipamento #${id}`,
+          total
+        })).sort((a, b) => b.total - a.total).slice(0, 6),
+        reservas_ultimos_7_dias: seriesForDates(db.reservas.filter(r => ativos(r.status)), 'data_inicio'),
+        no_shows_ultimos_7_dias: seriesForDates(db.reservas.filter(r => r.no_show || status(r.status) === 'no_show'), 'no_show_at'),
+        manutencoes_por_status: [...new Set(db.manutencoes.map(m => status(m.status)))].map(label => ({
+          label,
+          total: db.manutencoes.filter(m => status(m.status) === label).length
+        })),
+        manutencoes_recorrentes: [...recurrentMaintenance].filter(([, total]) => total >= 2).map(([id, total]) => ({
+          label: db.equipamentos.find(e => e.id === id)?.nome || `Equipamento #${id}`,
+          total
+        })),
+        ocorrencias_por_gravidade: ['alta', 'media', 'baixa'].map(label => ({
+          label,
+          total: ocorrenciasAbertas.filter(o => status(o.gravidade || o.prioridade) === label).length
+        }))
       }
     });
   }

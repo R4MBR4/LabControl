@@ -11,29 +11,98 @@ import {
   Wrench,
   Boxes,
   ArrowUpRight,
-  CheckCircle2,
   AlertCircle,
-  Clock
+  Clock,
+  Activity,
+  CalendarDays,
+  MapPin,
+  Timer
 } from 'lucide-react';
+
+function MetricCard({ title, value, details, icon: Icon, tone = 'teal' }) {
+  const tones = {
+    teal: 'bg-teal-50 text-teal-700',
+    blue: 'bg-blue-50 text-blue-700',
+    amber: 'bg-amber-50 text-amber-700',
+    rose: 'bg-rose-50 text-rose-700',
+    purple: 'bg-purple-50 text-purple-700',
+    slate: 'bg-slate-100 text-slate-700'
+  };
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900">{value}</p>
+        </div>
+        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${tones[tone] || tones.teal}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-slate-500">{details}</p>
+    </div>
+  );
+}
+
+function BarList({ title, entries = [], emptyText = 'Sem dados para o período.', formatLabel }) {
+  const max = Math.max(1, ...entries.map((entry) => Number(entry.total || 0)));
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+      <h3 className="mb-4 text-xs font-bold uppercase tracking-wide text-slate-700">{title}</h3>
+      {entries.length === 0 ? (
+        <p className="py-4 text-xs text-slate-400">{emptyText}</p>
+      ) : (
+        <div className="space-y-3">
+          {entries.map((entry, index) => (
+            <div key={`${entry.label}-${index}`} className="space-y-1">
+              <div className="flex items-center justify-between gap-3 text-[11px]">
+                <span className="truncate text-slate-600">{formatLabel ? formatLabel(entry.label) : entry.label}</span>
+                <span className="shrink-0 font-semibold text-slate-800">{entry.total}</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-teal-500"
+                  style={{ width: `${(Number(entry.total || 0) / max) * 100}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function formatDayMonth(value) {
+  const [year, month, day] = String(value).slice(0, 10).split('-');
+  return year && month && day ? `${day}/${month}` : value;
+}
 
 export default function Dashboard() {
   const { user, isAdmin } = useAuth();
   const [metrics, setMetrics] = useState(null);
   const [myReservas, setMyReservas] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [metricsError, setMetricsError] = useState('');
 
   useEffect(() => {
     async function loadData() {
       try {
         if (isAdmin) {
-          const resMetrics = await api.get('/dashboard/metricas');
-          setMetrics(resMetrics.data);
+          try {
+            const resMetrics = await api.get('/dashboard/metricas');
+            setMetrics(resMetrics.data);
+            setMetricsError('');
+          } catch (err) {
+            setMetricsError(err.response?.data?.error || 'Não foi possível carregar os indicadores do dashboard.');
+          }
         }
-        // Carrega reservas recentes do usuário ou gerais
-        const resReservas = await api.get('/reservas');
-        setMyReservas(resReservas.data.slice(0, 5));
-      } catch (err) {
-        console.warn('[Dashboard] Erro ao carregar dados:', err.message);
+        try {
+          const resReservas = await api.get('/reservas');
+          setMyReservas(resReservas.data.slice(0, 5));
+        } catch (err) {
+          console.warn('[Dashboard] Erro ao carregar reservas recentes:', err.message);
+        }
       } finally {
         setLoading(false);
       }
@@ -75,94 +144,211 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Indicadores Básicos para o Administrador */}
+      {isAdmin && metricsError && (
+        <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{metricsError}</span>
+        </div>
+      )}
+
+      {isAdmin && loading && !metrics && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-xs text-slate-500">
+          Carregando indicadores operacionais...
+        </div>
+      )}
+
+      {/* Indicadores Administrativos */}
       {isAdmin && metrics && (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-              Indicadores Operacionais do Laboratório
+              O que está acontecendo agora?
             </h2>
-            <span className="text-xs text-slate-500">Atualizado em tempo real</span>
+            <span className="text-[11px] text-slate-500">
+              Atualizado {metrics.gerado_em ? new Date(metrics.gerado_em).toLocaleTimeString('pt-BR') : ''}
+            </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Card Espaços */}
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-              <div>
-                <span className="text-xs font-semibold text-slate-500 uppercase">Espaços / Labs</span>
-                <p className="text-2xl font-bold text-slate-900 mt-1">{metrics.espacos?.total || 0}</p>
-                <span className="text-[11px] text-teal-600 font-medium">Cadastrados no sistema</span>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center">
-                <Building2 className="w-6 h-6" />
-              </div>
-            </div>
-
-            {/* Card Equipamentos */}
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-              <div>
-                <span className="text-xs font-semibold text-slate-500 uppercase">Equipamentos</span>
-                <p className="text-2xl font-bold text-slate-900 mt-1">{metrics.equipamentos?.total || 0}</p>
-                <div className="flex gap-2 text-[10px] text-slate-500 font-medium mt-1">
-                  <span className="text-emerald-600 font-semibold">{metrics.equipamentos?.disponiveis || 0} Disp.</span>
-                  <span>•</span>
-                  <span className="text-amber-600 font-semibold">{metrics.equipamentos?.em_uso || 0} Em uso</span>
-                </div>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                <Cpu className="w-6 h-6" />
-              </div>
-            </div>
-
-            {/* Card Manutenções */}
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-              <div>
-                <span className="text-xs font-semibold text-slate-500 uppercase">Em Manutenção</span>
-                <p className="text-2xl font-bold text-rose-600 mt-1">
-                  {metrics.equipamentos?.manutencao || metrics.manutencoes?.em_andamento || 0}
-                </p>
-                <span className="text-[11px] text-rose-600 font-medium">Bloqueados para reserva</span>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
-                <Wrench className="w-6 h-6" />
-              </div>
-            </div>
-
-            {/* Card Ocorrências */}
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-              <div>
-                <span className="text-xs font-semibold text-slate-500 uppercase">Ocorrências Abertas</span>
-                <p className="text-2xl font-bold text-amber-600 mt-1">{metrics.ocorrencias?.abertas || 0}</p>
-                <span className="text-[11px] text-amber-600 font-medium">Aguardando decisão</span>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-            </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <MetricCard
+              title="Equipamentos"
+              value={metrics.equipamentos.total}
+              details={`${metrics.equipamentos.disponiveis} disponíveis · ${metrics.equipamentos.em_uso} em uso · ${metrics.equipamentos.manutencao} manutenção · ${metrics.equipamentos.inativos} inativos · ${metrics.equipamentos.nao_localizados} não localizados`}
+              icon={Cpu}
+              tone="blue"
+            />
+            <MetricCard
+              title="Espaços"
+              value={metrics.espacos.total}
+              details={`${metrics.espacos.disponiveis} disponíveis · ${metrics.espacos.ocupados} ocupados · ${metrics.espacos.indisponiveis} indisponíveis`}
+              icon={Building2}
+            />
+            <MetricCard
+              title="Reservas"
+              value={metrics.reservas.hoje}
+              details={`${metrics.reservas.futuras} futuras · ${metrics.reservas.em_andamento} em andamento · ${metrics.reservas.canceladas} canceladas · ${metrics.reservas.no_show} no-show`}
+              icon={CalendarCheck}
+              tone="purple"
+            />
+            <MetricCard
+              title="Ocorrências"
+              value={metrics.ocorrencias.abertas}
+              details={`${metrics.ocorrencias.recentes} registradas nos últimos 30 dias · ${metrics.ocorrencias.com_manutencao} associadas a equipamento em manutenção`}
+              icon={AlertTriangle}
+              tone="amber"
+            />
+            <MetricCard
+              title="Manutenções"
+              value={metrics.manutencoes.abertas}
+              details={`${metrics.manutencoes.concluidas} concluídas · ${metrics.manutencoes.recorrentes.length} equipamento(s) com recorrência · ${metrics.manutencoes.tempo_medio_horas === null ? 'tempo médio indisponível' : `média de ${metrics.manutencoes.tempo_medio_horas} h para conclusão`}`}
+              icon={Wrench}
+              tone="rose"
+            />
+            <MetricCard
+              title="Estoque baixo"
+              value={metrics.consumiveis.abaixo_minimo}
+              details={`${metrics.consumiveis.criticos} item(ns) sem saldo · alerta acionado quando quantidade ≤ mínimo`}
+              icon={Boxes}
+              tone="amber"
+            />
           </div>
 
-          {/* Alerta de Consumíveis em Estoque Crítico */}
-          {metrics.consumiveis?.total_criticos > 0 && (
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                  <Boxes className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-amber-900">
-                    Atenção: {metrics.consumiveis.total_criticos} item(ns) com estoque no nível mínimo ou esgotado!
-                  </h4>
-                  <p className="text-xs text-amber-700 mt-0.5">
-                    Itens críticos: {metrics.consumiveis.itens_criticos?.map(i => i.nome).join(', ')}
-                  </p>
-                </div>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+            <div className="mb-4 flex items-center gap-2">
+              <Activity className="h-4 w-4 text-teal-600" />
+              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-800">Em utilização agora</h3>
+            </div>
+            {metrics.em_utilizacao_agora.length === 0 ? (
+              <p className="py-3 text-xs text-slate-400">Nenhum recurso em utilização neste momento.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {metrics.em_utilizacao_agora.map((item) => (
+                  <div key={`${item.tipo_recurso}-${item.id}`} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-bold text-slate-800">{item.recurso_nome || 'Recurso'}</p>
+                        <p className="mt-1 text-[11px] text-slate-600">{item.usuario_nome} · {item.espaco_nome || 'Sem laboratório'}</p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-semibold capitalize text-teal-800">
+                        {item.tipo_recurso}
+                      </span>
+                    </div>
+                    <p className="mt-2 flex items-center gap-1 text-[10px] text-slate-500">
+                      <Clock className="h-3 w-3" />
+                      Início {item.data_inicio ? new Date(item.data_inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                      {' · '}
+                      Término previsto {item.data_fim_previsto ? new Date(item.data_fim_previsto).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'não informado'}
+                      {item.reserva_id ? ` · Reserva #${item.reserva_id}` : ''}
+                    </p>
+                  </div>
+                ))}
               </div>
-              <Link
-                to="/consumiveis"
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl shrink-0 transition text-center"
-              >
-                Gerenciar Estoque
-              </Link>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-800">O que precisa de atenção?</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+              {[
+                ['Manutenções pendentes', metrics.alertas.manutencoes_pendentes, '/manutencao'],
+                ['Ocorrências abertas', metrics.alertas.ocorrencias_abertas, '/ocorrencias'],
+                ['Inventários em andamento', metrics.alertas.inventarios_incompletos, '/inventario'],
+                ['Divergências de localização', metrics.alertas.divergencias_localizacao, '/inventario'],
+                ['Não localizados', metrics.alertas.equipamentos_nao_localizados, '/inventario'],
+                ['Estoque baixo', metrics.alertas.estoque_baixo, '/consumiveis'],
+                ['Capacitações vencidas', metrics.alertas.capacitacoes_vencidas, '/capacitacoes'],
+                ['Reservas nas próximas 24h', metrics.alertas.reservas_proximas, '/reservas'],
+                ['No-shows registrados', metrics.alertas.no_shows, '/reservas']
+              ].map(([label, value, href]) => (
+                <Link key={label} to={href} className={`rounded-xl border p-3 transition hover:shadow-xs ${value > 0 ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'}`}>
+                  <span className="block text-[10px] font-medium leading-snug text-slate-600">{label}</span>
+                  <strong className={`mt-1 block text-lg ${value > 0 ? 'text-amber-800' : 'text-slate-800'}`}>{value}</strong>
+                </Link>
+              ))}
+            </div>
+          </section>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            <BarList title="Utilização por laboratório · 30 dias" entries={metrics.graficos.utilizacao_por_laboratorio} />
+            <BarList title="Equipamentos mais utilizados" entries={metrics.graficos.equipamentos_mais_utilizados} />
+            <BarList title="Reservas · últimos 7 dias" entries={metrics.graficos.reservas_ultimos_7_dias} formatLabel={formatDayMonth} />
+            <BarList title="No-shows · últimos 7 dias" entries={metrics.graficos.no_shows_ultimos_7_dias} formatLabel={formatDayMonth} />
+            <BarList title="Ocorrências abertas por gravidade" entries={metrics.graficos.ocorrencias_por_gravidade} />
+            <BarList title="Manutenções por status" entries={metrics.graficos.manutencoes_por_status} />
+            <BarList title="Manutenções recorrentes por equipamento" entries={metrics.graficos.manutencoes_recorrentes} emptyText="Nenhum equipamento tem duas ou mais manutenções registradas." />
+          </div>
+
+          {(metrics.proximas_reservas.length > 0 || metrics.ocorrencias_pendentes.length > 0 || metrics.manutencoes_pendentes.length > 0 || metrics.consumiveis.itens_criticos.length > 0) && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {metrics.proximas_reservas.length > 0 && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+                  <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-700">
+                    <CalendarDays className="h-4 w-4 text-teal-600" /> Próximas reservas
+                  </h3>
+                  <div className="space-y-2">
+                    {metrics.proximas_reservas.map((item) => (
+                      <div key={item.id} className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2 last:border-0">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-slate-800">{item.equipamento_nome || item.espaco_nome}</p>
+                          <p className="text-[10px] text-slate-500">{item.usuario_nome} · {item.espaco_nome || 'Sem laboratório'}</p>
+                        </div>
+                        <span className="shrink-0 text-[10px] text-slate-500">{new Date(item.data_inicio).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {metrics.ocorrencias_pendentes.length > 0 && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+                  <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-700">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" /> Ocorrências aguardando análise
+                  </h3>
+                  <div className="space-y-2">
+                    {metrics.ocorrencias_pendentes.map((item) => (
+                      <div key={item.id} className="border-b border-slate-100 pb-2 last:border-0">
+                        <p className="truncate text-xs font-semibold text-slate-800">{item.titulo || item.equipamento_nome || `Ocorrência #${item.id}`}</p>
+                        <p className="text-[10px] text-slate-500">{item.gravidade || 'Sem gravidade'} · {item.equipamento_nome || item.espaco_nome || 'Recurso não informado'}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {metrics.manutencoes_pendentes.length > 0 && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+                  <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-700">
+                    <Timer className="h-4 w-4 text-rose-600" /> Manutenções abertas
+                  </h3>
+                  <div className="space-y-2">
+                    {metrics.manutencoes_pendentes.map((item) => (
+                      <div key={item.id} className="border-b border-slate-100 pb-2 last:border-0">
+                        <p className="truncate text-xs font-semibold text-slate-800">{item.equipamento_nome || `Equipamento #${item.equipamento_id}`}</p>
+                        <p className="text-[10px] text-slate-500">{item.tipo} · {item.status}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {metrics.consumiveis.itens_criticos.length > 0 && (
+                <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-xs">
+                  <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-amber-900">
+                    <Boxes className="h-4 w-4" /> Itens abaixo do mínimo
+                  </h3>
+                  <div className="space-y-2">
+                    {metrics.consumiveis.itens_criticos.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between gap-3 border-b border-amber-100 pb-2 last:border-0">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-amber-950">{item.nome}</p>
+                          <p className="flex items-center gap-1 text-[10px] text-amber-800"><MapPin className="h-3 w-3" />{item.espaco_nome || 'Sem laboratório'}</p>
+                        </div>
+                        <span className="shrink-0 text-[10px] text-amber-900">{item.quantidade} / mín. {item.quantidade_minima} {item.unidade}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
           )}
         </div>
