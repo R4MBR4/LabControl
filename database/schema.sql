@@ -65,14 +65,27 @@ CREATE TABLE `equipamento` (
   `espaco_id` INT NOT NULL,
   `nome` VARCHAR(100) NOT NULL,
   `codigo_patrimonio` VARCHAR(50) NOT NULL UNIQUE,
+  `patrimonio_ufpi` VARCHAR(50) NULL,
+  `codigo_labcontrol` VARCHAR(50) NULL UNIQUE,
   `categoria` VARCHAR(50) NULL,
+  `marca` VARCHAR(100) NULL,
   `modelo` VARCHAR(100) NULL,
   `numero_serie` VARCHAR(100) NULL,
+  `localizacao_detalhada` VARCHAR(150) NULL,
   `status` VARCHAR(30) NOT NULL DEFAULT 'disponivel',
+  `inativo` TINYINT(1) NOT NULL DEFAULT 0,
+  `inativo_em` DATETIME NULL,
+  `inativo_por_usuario_id` INT NULL,
+  `motivo_inativacao` TEXT NULL,
   `exige_capacitacao` TINYINT(1) NOT NULL DEFAULT 0,
+  `observacoes` TEXT NULL,
+  `foto_url` LONGTEXT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_equipamento_espaco` (`espaco_id`),
   INDEX `idx_equipamento_status` (`status`),
+  INDEX `idx_equipamento_inativo` (`inativo`),
+  INDEX `idx_equipamento_labcontrol` (`codigo_labcontrol`),
+  INDEX `idx_equipamento_ufpi` (`patrimonio_ufpi`),
   CONSTRAINT `fk_equipamento_espaco`
     FOREIGN KEY (`espaco_id`) REFERENCES `espaco` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE
@@ -235,13 +248,13 @@ INSERT INTO `espaco` (`id`, `nome`, `codigo`, `capacidade`, `localizacao`, `stat
 (3, 'Laboratório de Robótica e Automação', 'LAB-ROB-01', 25, 'Bloco A - Sala 102', 'disponivel', 'Bancadas industriais, braços robóticos e kits microcontrolados.'),
 (4, 'Laboratório de Química Analítica', 'LAB-QUI-01', 20, 'Bloco D - 1º Andar', 'manutencao', 'Capela de exaustão, reagentes e balanças de precisão analítica.');
 
-INSERT INTO `equipamento` (`id`, `espaco_id`, `nome`, `codigo_patrimonio`, `categoria`, `modelo`, `numero_serie`, `status`, `exige_capacitacao`) VALUES
-(1, 2, 'Impressora 3D Creality K1 Speed', 'PAT-2024-001', 'Fabricação Digital', 'Creality K1 600mm/s', 'CR-K1-99812', 'disponivel', 1),
-(2, 2, 'Cortadora e Gravadora a Laser CO2 60W', 'PAT-2024-002', 'Corte e Usinagem', 'LaserMaster 4060', 'LM-60W-3312', 'em_uso', 1),
-(3, 3, 'Osciloscópio Digital Tektronix 50MHz', 'PAT-2024-003', 'Instrumentação', 'TBS1052B-EDU', 'TEK-50-8472', 'disponivel', 0),
-(4, 3, 'Braço Robótico Dobot Magician', 'PAT-2024-004', 'Robótica', 'Dobot Basic V2', 'DOBOT-1029', 'disponivel', 1),
-(5, 4, 'Microscópio Óptico Binocular Nikon', 'PAT-2024-005', 'Óptica', 'Eclipse E100', 'NK-88219', 'manutencao', 0),
-(6, 2, 'Estação de Solda Digital AFR 936', 'PAT-2024-006', 'Eletrônica', 'AFR 936 ESD', 'AFR-7721', 'disponivel', 0);
+INSERT INTO `equipamento` (`id`, `espaco_id`, `nome`, `codigo_patrimonio`, `patrimonio_ufpi`, `codigo_labcontrol`, `categoria`, `marca`, `modelo`, `numero_serie`, `localizacao_detalhada`, `status`, `exige_capacitacao`) VALUES
+(1, 2, 'Impressora 3D Creality K1 Speed', 'PAT-2024-001', 'UFPI-PAT-001', 'LC-EQ-0001', 'Fabricação Digital', 'Creality', 'Creality K1 600mm/s', 'CR-K1-99812', 'Bancada 01 - Fabricação Digital', 'disponivel', 1),
+(2, 2, 'Cortadora e Gravadora a Laser CO2 60W', 'PAT-2024-002', 'UFPI-PAT-002', 'LC-EQ-0002', 'Corte e Usinagem', 'LaserMaster', 'LaserMaster 4060', 'LM-60W-3312', 'Área de Corte Fechada', 'em_uso', 1),
+(3, 3, 'Osciloscópio Digital Tektronix 50MHz', 'PAT-2024-003', 'UFPI-PAT-003', 'LC-EQ-0003', 'Instrumentação', 'Tektronix', 'TBS1052B-EDU', 'TEK-50-8472', 'Bancada de Eletrônica 02', 'disponivel', 0),
+(4, 3, 'Braço Robótico Dobot Magician', 'PAT-2024-004', 'UFPI-PAT-004', 'LC-EQ-0004', 'Robótica', 'Dobot', 'Dobot Basic V2', 'DOBOT-1029', 'Célula de Automação A', 'disponivel', 1),
+(5, 4, 'Microscópio Óptico Binocular Nikon', 'PAT-2024-005', 'UFPI-PAT-005', 'LC-EQ-0005', 'Óptica', 'Nikon', 'Eclipse E100', 'NK-88219', 'Bancada Central de Óptica', 'manutencao', 0),
+(6, 2, 'Estação de Solda Digital AFR 936', 'PAT-2024-006', 'UFPI-PAT-006', 'LC-EQ-0006', 'Eletrônica', 'AFR', 'AFR 936 ESD', 'AFR-7721', 'Bancada de Montagem Rápida', 'disponivel', 0);
 
 INSERT INTO `reserva` (`id`, `usuario_id`, `espaco_id`, `equipamento_id`, `data_inicio`, `data_fim`, `finalidade`, `status`) VALUES
 (1, 2, 2, 2, DATE_SUB(NOW(), INTERVAL 1 HOUR), DATE_ADD(NOW(), INTERVAL 2 HOUR), 'Aula prática de Prototipagem Rápida', 'em_andamento'),

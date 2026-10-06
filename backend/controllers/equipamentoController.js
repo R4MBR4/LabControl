@@ -6,6 +6,11 @@ async function list(req, res) {
     const filters = {};
     if (req.query.status) filters.status = req.query.status;
     if (req.query.espaco_id) filters.espaco_id = req.query.espaco_id;
+    if (req.query.search) filters.search = req.query.search;
+    if (req.query.incluir_inativos !== undefined) filters.incluir_inativos = req.query.incluir_inativos;
+    if (req.query.apenas_inativos !== undefined) filters.apenas_inativos = req.query.apenas_inativos;
+    if (req.query.inativo !== undefined) filters.inativo = req.query.inativo === 'true' || req.query.inativo === '1';
+
     if (req.query.exige_capacitacao !== undefined) {
       filters.exige_capacitacao = req.query.exige_capacitacao === 'true' || req.query.exige_capacitacao === '1';
     }
@@ -15,10 +20,10 @@ async function list(req, res) {
   } catch (err) {
     console.error('[Equipamento] Erro ao listar:', err.message);
     res.json([
-      { id: 1, nome: 'Impressora 3D Creality Ender 3 Pro', codigo_patrimonio: 'EQ-1001', espaco_nome: 'Lab Prototipagem', tipo: 'Prototipagem', status: 'disponivel', exige_capacitacao: 1, descricao: 'Impressora FDM com área de impressão 220x220x250mm para filamentos PLA e PETG.' },
-      { id: 2, nome: 'Osciloscópio Digital Tektronix TBS1052B', codigo_patrimonio: 'EQ-1002', espaco_nome: 'Lab Robótica', tipo: 'Eletrônica', status: 'em_uso', exige_capacitacao: 0, descricao: 'Dois canais, 50 MHz de largura de banda e taxa de amostragem de 1 GS/s.' },
-      { id: 3, nome: 'Cortadora a Laser CO2 60W', codigo_patrimonio: 'EQ-1003', espaco_nome: 'Lab Prototipagem', tipo: 'Corte / Usinagem', status: 'manutencao', exige_capacitacao: 1, descricao: 'Corte e gravação de chapas acrílicas e MDF. Bloqueada para alinhamento óptico.' },
-      { id: 4, nome: 'Fonte de Alimentação Simétrica DC 30V 5A', codigo_patrimonio: 'EQ-1004', espaco_nome: 'Lab Robótica', tipo: 'Eletrônica', status: 'disponivel', exige_capacitacao: 0, descricao: 'Fonte ajustável com proteção de sobrecorrente e display digital quádruplo.' }
+      { id: 1, nome: 'Impressora 3D Creality Ender 3 Pro', codigo_patrimonio: 'EQ-1001', patrimonio_ufpi: 'UFPI-1001', codigo_labcontrol: 'LC-EQ-0001', espaco_nome: 'Lab Prototipagem', categoria: 'Prototipagem', marca: 'Creality', status: 'disponivel', inativo: 0, exige_capacitacao: 1, descricao: 'Impressora FDM com área de impressão 220x220x250mm para filamentos PLA e PETG.' },
+      { id: 2, nome: 'Osciloscópio Digital Tektronix TBS1052B', codigo_patrimonio: 'EQ-1002', patrimonio_ufpi: 'UFPI-1002', codigo_labcontrol: 'LC-EQ-0002', espaco_nome: 'Lab Robótica', categoria: 'Eletrônica', marca: 'Tektronix', status: 'em_uso', inativo: 0, exige_capacitacao: 0, descricao: 'Dois canais, 50 MHz de largura de banda e taxa de amostragem de 1 GS/s.' },
+      { id: 3, nome: 'Cortadora a Laser CO2 60W', codigo_patrimonio: 'EQ-1003', patrimonio_ufpi: 'UFPI-1003', codigo_labcontrol: 'LC-EQ-0003', espaco_nome: 'Lab Prototipagem', categoria: 'Corte / Usinagem', marca: 'LaserMaster', status: 'manutencao', inativo: 0, exige_capacitacao: 1, descricao: 'Corte e gravação de chapas acrílicas e MDF. Bloqueada para alinhamento óptico.' },
+      { id: 4, nome: 'Fonte de Alimentação Simétrica DC 30V 5A', codigo_patrimonio: 'EQ-1004', patrimonio_ufpi: 'UFPI-1004', codigo_labcontrol: 'LC-EQ-0004', espaco_nome: 'Lab Robótica', categoria: 'Eletrônica', marca: 'Minipa', status: 'disponivel', inativo: 0, exige_capacitacao: 0, descricao: 'Fonte ajustável com proteção de sobrecorrente e display digital quádruplo.' }
     ]);
   }
 }
@@ -46,7 +51,7 @@ async function create(req, res) {
     res.status(201).json(novo);
   } catch (err) {
     console.error('[Equipamento] Erro ao cadastrar:', err);
-    res.status(500).json({ error: 'Erro ao cadastrar equipamento' });
+    res.status(500).json({ error: 'Erro ao cadastrar equipamento: ' + err.message });
   }
 }
 
@@ -59,25 +64,83 @@ async function update(req, res) {
     res.json(updated);
   } catch (err) {
     console.error('[Equipamento] Erro ao atualizar:', err);
-    res.status(500).json({ error: 'Erro ao atualizar equipamento' });
-  }
-}
-
-async function remove(req, res) {
-  try {
-    const success = await equipamentoModel.deleteEquipamento(req.params.id);
-    if (!success) {
-      return res.status(404).json({ error: 'Equipamento não encontrado' });
-    }
-    res.json({ message: 'Equipamento removido com sucesso' });
-  } catch (err) {
-    console.error('[Equipamento] Erro ao remover:', err);
-    res.status(500).json({ error: 'Erro ao remover equipamento' });
+    res.status(500).json({ error: 'Erro ao atualizar equipamento: ' + err.message });
   }
 }
 
 /**
- * Funcionalidade obrigatória 8: Histórico completo por equipamento
+ * Inativação de Equipamentos (Regra obrigatória Bloco 02):
+ * Não exclui fisicamente o equipamento. Impede novas reservas e utilização,
+ * preservando histórico, ocorrências e manutenções.
+ */
+async function inativar(req, res) {
+  try {
+    const { motivo } = req.body;
+    const usuarioId = req.user?.id;
+
+    if (!motivo || motivo.trim() === '') {
+      return res.status(400).json({ error: 'O motivo da inativação é obrigatório' });
+    }
+
+    const equipamento = await equipamentoModel.getEquipamentoById(req.params.id);
+    if (!equipamento) {
+      return res.status(404).json({ error: 'Equipamento não encontrado' });
+    }
+
+    const inativado = await equipamentoModel.inativarEquipamento(req.params.id, usuarioId, motivo.trim());
+    res.json({
+      message: 'Equipamento inativado com sucesso. Histórico preservado.',
+      equipamento: inativado
+    });
+  } catch (err) {
+    console.error('[Equipamento] Erro ao inativar:', err);
+    res.status(500).json({ error: 'Erro ao inativar equipamento: ' + err.message });
+  }
+}
+
+/**
+ * Reativação de Equipamentos
+ */
+async function reativar(req, res) {
+  try {
+    const equipamento = await equipamentoModel.getEquipamentoById(req.params.id);
+    if (!equipamento) {
+      return res.status(404).json({ error: 'Equipamento não encontrado' });
+    }
+
+    const reativado = await equipamentoModel.reativarEquipamento(req.params.id);
+    res.json({
+      message: 'Equipamento reativado com sucesso.',
+      equipamento: reativado
+    });
+  } catch (err) {
+    console.error('[Equipamento] Erro ao reativar:', err);
+    res.status(500).json({ error: 'Erro ao reativar equipamento: ' + err.message });
+  }
+}
+
+/**
+ * Remoção: verifica histórico e inativa se houver uso prévio
+ */
+async function remove(req, res) {
+  try {
+    const usuarioId = req.user?.id;
+    const motivo = req.body?.motivo || 'Inativação solicitada via exclusão de equipamento com histórico.';
+    const result = await equipamentoModel.deleteEquipamento(req.params.id, usuarioId, motivo);
+    
+    if (!result || !result.success) {
+      return res.status(404).json({ error: 'Equipamento não encontrado' });
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('[Equipamento] Erro ao remover:', err);
+    res.status(500).json({ error: 'Erro ao remover equipamento: ' + err.message });
+  }
+}
+
+/**
+ * Histórico completo por equipamento
  * (utilizações, ocorrências, manutenções)
  */
 async function getHistorico(req, res) {
@@ -98,6 +161,8 @@ async function getHistorico(req, res) {
         id: req.params.id,
         nome: 'Impressora 3D Creality Ender 3 Pro',
         codigo_patrimonio: `EQ-${req.params.id}`,
+        patrimonio_ufpi: `UFPI-${req.params.id}`,
+        codigo_labcontrol: `LC-EQ-${req.params.id}`,
         status: 'disponivel',
         exige_capacitacao: 1,
         espaco_nome: 'Laboratório de Prototipagem e Impressão 3D',
@@ -145,7 +210,7 @@ async function getHistorico(req, res) {
 }
 
 /**
- * Funcionalidade obrigatória 3: Geração automática de QR Code por equipamento
+ * Geração de QR Code com dados estáveis do equipamento
  */
 async function getQRCode(req, res) {
   try {
@@ -154,9 +219,13 @@ async function getQRCode(req, res) {
       return res.status(404).json({ error: 'Equipamento não encontrado' });
     }
 
+    const codigoLab = equip.codigo_labcontrol || `LC-EQ-${String(equip.id).padStart(4, '0')}`;
+    const codigoPat = equip.patrimonio_ufpi || equip.codigo_patrimonio || equip.codigo || `EQ-${equip.id}`;
+
     const payload = JSON.stringify({
-      id: equip.id || equip.id_equipamento,
-      codigo: equip.codigo_patrimonio || equip.patrimonio || equip.codigo || `EQ-${equip.id}`,
+      id: equip.id,
+      codigo_labcontrol: codigoLab,
+      patrimonio_ufpi: codigoPat,
       nome: equip.nome,
       action: 'LABCONTROL_CHECKIN_CHECKOUT'
     });
@@ -172,9 +241,11 @@ async function getQRCode(req, res) {
     });
 
     res.json({
-      equipamento_id: equip.id || equip.id_equipamento,
+      equipamento_id: equip.id,
       nome: equip.nome,
-      codigo: equip.codigo_patrimonio || equip.patrimonio || equip.codigo,
+      codigo: codigoPat,
+      codigo_labcontrol: codigoLab,
+      patrimonio_ufpi: codigoPat,
       qr_payload: payload,
       qr_code_image: qrDataUrl
     });
@@ -189,6 +260,8 @@ module.exports = {
   getById,
   create,
   update,
+  inativar,
+  reativar,
   remove,
   getHistorico,
   getQRCode

@@ -14,6 +14,8 @@ router.get('/:id/qrcode', equipamentoController.getQRCode);
 // Gestão de equipamentos restrita ao Administrador
 router.post('/', authorizeAdmin, equipamentoController.create);
 router.put('/:id', authorizeAdmin, equipamentoController.update);
+router.post('/:id/inativar', authorizeAdmin, equipamentoController.inativar);
+router.post('/:id/reativar', authorizeAdmin, equipamentoController.reativar);
 router.delete('/:id', authorizeAdmin, equipamentoController.remove);
 
 module.exports = router;

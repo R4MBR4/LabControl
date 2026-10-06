@@ -14,12 +14,12 @@ const initialData = {
     { id: 4, nome: 'Laboratório de Química Analítica', codigo: 'LAB-QUI-01', capacidade: 20, localizacao: 'Bloco D - 1º Andar', status: 'MANUTENCAO', descricao: 'Capela de exaustão, reagentes e balanças de precisão analítica.' }
   ],
   equipamentos: [
-    { id: 1, nome: 'Impressora 3D Creality K1 Speed', codigo_patrimonio: 'PAT-2024-001', espaco_id: 2, espaco_nome: 'Espaço Maker & Prototipagem (FabLab)', status: 'DISPONIVEL', categoria: 'Fabricação Digital', modelo: 'Creality K1 600mm/s', numero_serie: 'CR-K1-99812' },
-    { id: 2, nome: 'Cortadora e Gravadora a Laser CO2 60W', codigo_patrimonio: 'PAT-2024-002', espaco_id: 2, espaco_nome: 'Espaço Maker & Prototipagem (FabLab)', status: 'EM_USO', categoria: 'Corte e Usinagem', modelo: 'LaserMaster 4060', numero_serie: 'LM-60W-3312' },
-    { id: 3, nome: 'Osciloscópio Digital Tektronix 50MHz', codigo_patrimonio: 'PAT-2024-003', espaco_id: 3, espaco_nome: 'Laboratório de Robótica e Automação', status: 'DISPONIVEL', categoria: 'Instrumentação', modelo: 'TBS1052B-EDU', numero_serie: 'TEK-50-8472' },
-    { id: 4, nome: 'Braço Robótico Dobot Magician', codigo_patrimonio: 'PAT-2024-004', espaco_id: 3, espaco_nome: 'Laboratório de Robótica e Automação', status: 'DISPONIVEL', categoria: 'Robótica', modelo: 'Dobot Basic V2', numero_serie: 'DOBOT-1029' },
-    { id: 5, nome: 'Microscópio Óptico Binocular Nikon', codigo_patrimonio: 'PAT-2024-005', espaco_id: 4, espaco_nome: 'Laboratório de Química Analítica', status: 'MANUTENCAO', categoria: 'Óptica', modelo: 'Eclipse E100', numero_serie: 'NK-88219' },
-    { id: 6, nome: 'Estação de Solda Digital AFR 936', codigo_patrimonio: 'PAT-2024-006', espaco_id: 2, espaco_nome: 'Espaço Maker & Prototipagem (FabLab)', status: 'DISPONIVEL', categoria: 'Eletrônica', modelo: 'AFR 936 ESD', numero_serie: 'AFR-7721' }
+    { id: 1, nome: 'Impressora 3D Creality K1 Speed', codigo_patrimonio: 'PAT-2024-001', patrimonio_ufpi: 'UFPI-PAT-001', codigo_labcontrol: 'LC-EQ-0001', espaco_id: 2, espaco_nome: 'Espaço Maker & Prototipagem (FabLab)', status: 'disponivel', inativo: 0, categoria: 'Fabricação Digital', marca: 'Creality', modelo: 'Creality K1 600mm/s', numero_serie: 'CR-K1-99812', localizacao_detalhada: 'Bancada 01 - Fabricação Digital' },
+    { id: 2, nome: 'Cortadora e Gravadora a Laser CO2 60W', codigo_patrimonio: 'PAT-2024-002', patrimonio_ufpi: 'UFPI-PAT-002', codigo_labcontrol: 'LC-EQ-0002', espaco_id: 2, espaco_nome: 'Espaço Maker & Prototipagem (FabLab)', status: 'em_uso', inativo: 0, categoria: 'Corte e Usinagem', marca: 'LaserMaster', modelo: 'LaserMaster 4060', numero_serie: 'LM-60W-3312', localizacao_detalhada: 'Área de Corte Fechada' },
+    { id: 3, nome: 'Osciloscópio Digital Tektronix 50MHz', codigo_patrimonio: 'PAT-2024-003', patrimonio_ufpi: 'UFPI-PAT-003', codigo_labcontrol: 'LC-EQ-0003', espaco_id: 3, espaco_nome: 'Laboratório de Robótica e Automação', status: 'disponivel', inativo: 0, categoria: 'Instrumentação', marca: 'Tektronix', modelo: 'TBS1052B-EDU', numero_serie: 'TEK-50-8472', localizacao_detalhada: 'Bancada de Eletrônica 02' },
+    { id: 4, nome: 'Braço Robótico Dobot Magician', codigo_patrimonio: 'PAT-2024-004', patrimonio_ufpi: 'UFPI-PAT-004', codigo_labcontrol: 'LC-EQ-0004', espaco_id: 3, espaco_nome: 'Laboratório de Robótica e Automação', status: 'disponivel', inativo: 0, categoria: 'Robótica', marca: 'Dobot', modelo: 'Dobot Basic V2', numero_serie: 'DOBOT-1029', localizacao_detalhada: 'Célula de Automação A' },
+    { id: 5, nome: 'Microscópio Óptico Binocular Nikon', codigo_patrimonio: 'PAT-2024-005', patrimonio_ufpi: 'UFPI-PAT-005', codigo_labcontrol: 'LC-EQ-0005', espaco_id: 4, espaco_nome: 'Laboratório de Química Analítica', status: 'manutencao', inativo: 0, categoria: 'Óptica', marca: 'Nikon', modelo: 'Eclipse E100', numero_serie: 'NK-88219', localizacao_detalhada: 'Bancada Central de Óptica' },
+    { id: 6, nome: 'Estação de Solda Digital AFR 936', codigo_patrimonio: 'PAT-2024-006', patrimonio_ufpi: 'UFPI-PAT-006', codigo_labcontrol: 'LC-EQ-0006', espaco_id: 2, espaco_nome: 'Espaço Maker & Prototipagem (FabLab)', status: 'disponivel', inativo: 0, categoria: 'Eletrônica', marca: 'AFR', modelo: 'AFR 936 ESD', numero_serie: 'AFR-7721', localizacao_detalhada: 'Bancada de Montagem Rápida' }
   ],
   reservas: [
     {
@@ -328,10 +328,14 @@ export function handleMockRequest(method, url, data) {
   if (cleanUrl === '/equipamentos') {
     if (method.toUpperCase() === 'POST') {
       const esp = db.espacos.find(s => s.id === Number(data.espaco_id));
+      const randSeq = Math.floor(1000 + Math.random() * 9000);
       const novo = {
         id: Date.now(),
-        codigo_patrimonio: data.codigo_patrimonio || `PAT-${Date.now().toString().slice(-4)}`,
-        status: 'DISPONIVEL',
+        codigo_patrimonio: data.codigo_patrimonio || data.patrimonio_ufpi || `PAT-${randSeq}`,
+        patrimonio_ufpi: data.patrimonio_ufpi || data.codigo_patrimonio || `UFPI-${randSeq}`,
+        codigo_labcontrol: data.codigo_labcontrol || `LC-EQ-${randSeq}`,
+        status: data.status || 'disponivel',
+        inativo: 0,
         espaco_nome: esp ? esp.nome : 'Laboratório Geral',
         ...data
       };
@@ -340,6 +344,37 @@ export function handleMockRequest(method, url, data) {
       return ok(novo);
     }
     return ok(db.equipamentos);
+  }
+  if (cleanUrl.match(/\/equipamentos\/\d+\/inativar/)) {
+    const id = Number(cleanUrl.split('/')[2]);
+    const idx = db.equipamentos.findIndex(e => e.id === id);
+    if (idx !== -1) {
+      db.equipamentos[idx] = {
+        ...db.equipamentos[idx],
+        status: 'inativo',
+        inativo: 1,
+        inativo_em: new Date().toISOString(),
+        inativo_por_usuario_nome: 'Administrador Demo',
+        motivo_inativacao: data?.motivo || 'Inativação administrativa'
+      };
+      saveStorage(db);
+      return ok({ message: 'Equipamento inativado com sucesso', equipamento: db.equipamentos[idx] });
+    }
+  }
+  if (cleanUrl.match(/\/equipamentos\/\d+\/reativar/)) {
+    const id = Number(cleanUrl.split('/')[2]);
+    const idx = db.equipamentos.findIndex(e => e.id === id);
+    if (idx !== -1) {
+      db.equipamentos[idx] = {
+        ...db.equipamentos[idx],
+        status: 'disponivel',
+        inativo: 0,
+        inativo_em: null,
+        motivo_inativacao: null
+      };
+      saveStorage(db);
+      return ok({ message: 'Equipamento reativado com sucesso', equipamento: db.equipamentos[idx] });
+    }
   }
   if (cleanUrl.match(/\/equipamentos\/\d+\/historico/)) {
     const id = Number(cleanUrl.split('/')[2]);
@@ -360,9 +395,23 @@ export function handleMockRequest(method, url, data) {
       }
     }
     if (method.toUpperCase() === 'DELETE') {
+      const hasHistory = db.utilizacoes.some(u => u.equipamento_id === id) ||
+                         db.ocorrencias.some(o => o.equipamento_id === id) ||
+                         db.manutencoes.some(m => m.equipamento_id === id);
+      if (hasHistory) {
+        const idx = db.equipamentos.findIndex(e => e.id === id);
+        if (idx !== -1) {
+          db.equipamentos[idx].status = 'inativo';
+          db.equipamentos[idx].inativo = 1;
+          db.equipamentos[idx].inativo_em = new Date().toISOString();
+          db.equipamentos[idx].motivo_inativacao = 'Inativação automática por possuir registros históricos de uso.';
+          saveStorage(db);
+          return ok({ inativado: true, message: 'Equipamento possui histórico e foi inativado para preservar os dados.' });
+        }
+      }
       db.equipamentos = db.equipamentos.filter(e => e.id !== id);
       saveStorage(db);
-      return ok({ message: 'Equipamento removido' });
+      return ok({ inativado: false, message: 'Equipamento sem histórico removido com sucesso' });
     }
     const equip = db.equipamentos.find(e => e.id === id);
     return ok(equip || db.equipamentos[0]);

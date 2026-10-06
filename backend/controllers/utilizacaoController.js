@@ -55,8 +55,12 @@ async function checkin(req, res) {
       return res.status(404).json({ error: 'Equipamento não encontrado' });
     }
 
-    // Validação de manutenção
+    // Validação de inativação e manutenção
     const statusAtual = (equip.status || '').toLowerCase();
+    if (equip.inativo === 1 || equip.inativo === true || statusAtual === 'inativo') {
+      return res.status(400).json({ error: 'Equipamento inativo não pode ser utilizado.' });
+    }
+
     if (statusAtual === 'manutencao' || statusAtual === 'em_manutencao') {
       return res.status(400).json({ error: 'Equipamento em manutenção. Check-in bloqueado.' });
     }

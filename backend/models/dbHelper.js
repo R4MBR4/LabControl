@@ -118,6 +118,7 @@ async function findAll(tableName, conditions = {}, orderBy = null) {
 
 module.exports = {
   pool,
+  getTableColumns,
   getPrimaryKey,
   resolveColumn,
   filterValidColumns,

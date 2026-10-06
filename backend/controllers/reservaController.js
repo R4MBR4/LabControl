@@ -86,6 +86,12 @@ async function create(req, res) {
       }
 
       const statusAtual = (equip.status || '').toLowerCase();
+      if (equip.inativo === 1 || equip.inativo === true || statusAtual === 'inativo') {
+        return res.status(400).json({ 
+          error: 'Equipamento inativo não pode receber reservas.' 
+        });
+      }
+
       if (statusAtual === 'manutencao' || statusAtual === 'em_manutencao') {
         return res.status(400).json({ 
           error: 'Equipamento em manutenção não pode ser reservado.' 
