@@ -2,6 +2,9 @@
 const STORAGE_KEY = 'labcontrol_demo_db_v2';
 
 const initialData = {
+  configuracoes: {
+    tolerancia_no_show_min: 15
+  },
   usuarios: [
     { id: 1, nome: 'Administrador Demo', email: 'admin@labcontrol.com', perfil: 'ADMIN', matricula: 'ADM-001', status: 'ATIVO', departamento: 'Coordenação de Laboratórios' },
     { id: 2, nome: 'Prof. Carlos Santos', email: 'professor@labcontrol.com', perfil: 'PROFESSOR', matricula: 'DOC-102', status: 'ATIVO', departamento: 'Engenharia e Automação' },
@@ -512,6 +515,22 @@ export function handleMockRequest(method, url, data) {
     })));
   }
 
+  if (cleanUrl === '/reservas/configuracao/no-show') {
+    if (method.toUpperCase() === 'PUT') {
+      const minutos = Number(data?.tolerancia_no_show_min);
+      if (!Number.isInteger(minutos) || minutos < 1 || minutos > 180) {
+        return { data: { error: 'Informe uma tolerância inteira entre 1 e 180 minutos.' }, status: 400 };
+      }
+      db.configuracoes = db.configuracoes || {};
+      db.configuracoes.tolerancia_no_show_min = minutos;
+      saveStorage(db);
+      return ok({ message: 'Tolerância de no-show atualizada.', tolerancia_no_show_min: minutos });
+    }
+    return ok({
+      tolerancia_no_show_min: db.configuracoes?.tolerancia_no_show_min || 15
+    });
+  }
+
   if (cleanUrl === '/reservas/recorrente' && method.toUpperCase() === 'POST') {
     const esp = db.espacos.find(s => s.id === Number(data.espaco_id));
     const eq = data.equipamento_id ? db.equipamentos.find(e => e.id === Number(data.equipamento_id)) : null;
@@ -537,6 +556,7 @@ export function handleMockRequest(method, url, data) {
         finalidade: data.finalidade || 'Série de Aulas / Recorrente',
         status: 'confirmada',
         recorrente: 1,
+        tolerancia_no_show_min: db.configuracoes?.tolerancia_no_show_min || 15,
         grupo_recorrencia_id: grupoId
       };
       db.reservas.unshift(item);
@@ -585,7 +605,12 @@ export function handleMockRequest(method, url, data) {
   }
 
   if (cleanUrl === '/reservas/verificar-no-shows') {
-    return ok({ message: 'Verificação concluída. 0 reservas marcadas.', totalMarcados: 0 });
+    const tolerancia = db.configuracoes?.tolerancia_no_show_min || 15;
+    return ok({
+      message: `Verificação concluída com tolerância de ${tolerancia} minutos. 0 reservas marcadas.`,
+      tolerancia_no_show_min: tolerancia,
+      totalMarcados: 0
+    });
   }
 
   // Cancelar reserva explicitamente: /reservas/:id/cancelar
@@ -1019,4 +1044,3 @@ export function handleMockRequest(method, url, data) {
   // Fallback genérico para qualquer outra rota
   return ok({ message: 'Operação simulada com sucesso (Modo Demo)' });
 }
-

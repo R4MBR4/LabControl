@@ -7,6 +7,8 @@ router.use(authenticateToken);
 
 router.get('/', reservaController.list);
 router.get('/calendario', reservaController.getCalendario);
+router.get('/configuracao/no-show', authorizeAdmin, reservaController.getToleranciaNoShow);
+router.put('/configuracao/no-show', authorizeAdmin, reservaController.updateToleranciaNoShow);
 router.post('/recorrente', reservaController.createRecorrente);
 router.post('/verificar-no-shows', authorizeAdmin, reservaController.verificarNoShows);
 router.get('/:id', reservaController.getById);

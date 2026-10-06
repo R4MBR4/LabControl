@@ -4,8 +4,9 @@ O **LabControl** é um sistema web full-stack desenvolvido para controle, agenda
 
 > ⚠️ **Importante sobre o Banco de Dados:**
 > Este sistema foi desenvolvido para **consumir o banco de dados MySQL existente** (`labcontrol`) via variáveis de ambiente.
-> **Nenhum script SQL (CREATE, ALTER ou DROP) foi incluído ou é executado pelo sistema.** As tabelas consumidas são:
-> `usuario` · `espaco` · `equipamento` · `reserva` · `utilizacao` · `ocorrencia` · `manutencao` · `consumivel` · `capacitacao`
+> Scripts SQL de schema e evolução estão em `database/`. Eles não são executados automaticamente pelo servidor. `database/schema.sql` recria as tabelas-base e contém comandos `DROP`; **não o execute sobre uma base com dados que devam ser preservados**.
+> Para uma base existente, aplique as migrações necessárias de forma controlada. A configuração administrativa da tolerância de no-show requer `database/migrations/07_configuracao_no_show.sql`.
+> Tabelas consumidas: `usuario` · `espaco` · `equipamento` · `reserva` · `utilizacao` · `ocorrencia` · `manutencao` · `consumivel` · `capacitacao` · `inventario` · `inventario_item` · `configuracao_sistema`
 
 ---
 

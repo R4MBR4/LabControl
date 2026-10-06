@@ -64,6 +64,7 @@ export default function Reservas() {
   const [horaInicio, setHoraInicio] = useState('08:00');
   const [horaFim, setHoraFim] = useState('10:00');
   const [toleranciaNoShow, setToleranciaNoShow] = useState(15);
+  const [savingNoShowTolerance, setSavingNoShowTolerance] = useState(false);
 
   // Cancelamento de série recorrente (Bloco 08)
   const [cancelRecModalOpen, setCancelRecModalOpen] = useState(false);
@@ -112,6 +113,15 @@ export default function Reservas() {
   useEffect(() => {
     loadData();
   }, [filtroStatus, filtroTipoRecurso, filtroEspacoId, filtroEquipamentoId, filtroDataInicio, filtroDataFim]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    api.get('/reservas/configuracao/no-show')
+      .then((res) => setToleranciaNoShow(res.data.tolerancia_no_show_min))
+      .catch((err) => {
+        setError(err.response?.data?.error || 'Não foi possível carregar a configuração de no-show.');
+      });
+  }, [isAdmin]);
 
   const handleSearchSubmit = (e) => {
     if (e) e.preventDefault();
@@ -297,7 +307,7 @@ export default function Reservas() {
   const handleVerificarNoShows = async () => {
     try {
       setLoading(true);
-      const res = await api.post('/reservas/verificar-no-shows', { tolerancia: 15 });
+      const res = await api.post('/reservas/verificar-no-shows');
       setSuccess(res.data.message || 'Verificação de no-shows concluída com sucesso!');
       await loadData();
       setTimeout(() => setSuccess(''), 5000);
@@ -305,6 +315,28 @@ export default function Reservas() {
       setError(err.response?.data?.error || 'Erro ao verificar no-shows');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveNoShowTolerance = async () => {
+    const minutos = Number(toleranciaNoShow);
+    if (!Number.isInteger(minutos) || minutos < 1 || minutos > 180) {
+      setError('Informe uma tolerância inteira entre 1 e 180 minutos.');
+      return;
+    }
+    try {
+      setSavingNoShowTolerance(true);
+      setError('');
+      const res = await api.put('/reservas/configuracao/no-show', {
+        tolerancia_no_show_min: minutos
+      });
+      setToleranciaNoShow(res.data.tolerancia_no_show_min);
+      setSuccess('Tolerância de no-show atualizada.');
+      setTimeout(() => setSuccess(''), 4000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erro ao salvar a tolerância de no-show.');
+    } finally {
+      setSavingNoShowTolerance(false);
     }
   };
 
@@ -458,16 +490,39 @@ export default function Reservas() {
             </button>
           </div>
 
-          {/* Botão Admin de Varredura de No-Show */}
+          {/* Configuração e verificação administrativa de no-show */}
           {isAdmin && (
-            <button
-              onClick={handleVerificarNoShows}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold transition cursor-pointer"
-              title="Identifica reservas passadas sem check-in além da tolerância de 15 minutos"
-            >
-              <Clock className="w-3.5 h-3.5 text-amber-600" />
-              Verificar No-Shows
-            </button>
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-2">
+              <label className="flex items-center gap-2 text-xs font-medium text-amber-900">
+                <Settings2 className="h-3.5 w-3.5" />
+                Tolerância (min)
+                <input
+                  type="number"
+                  min="1"
+                  max="180"
+                  step="1"
+                  value={toleranciaNoShow}
+                  onChange={(e) => setToleranciaNoShow(e.target.value)}
+                  className="w-16 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs text-slate-800"
+                  aria-label="Tolerância de no-show em minutos"
+                />
+              </label>
+              <button
+                onClick={handleSaveNoShowTolerance}
+                disabled={savingNoShowTolerance}
+                className="rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-50"
+              >
+                {savingNoShowTolerance ? 'Salvando...' : 'Salvar'}
+              </button>
+              <button
+                onClick={handleVerificarNoShows}
+                className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700"
+                title={`Identifica reservas sem check-in após ${toleranciaNoShow} minutos`}
+              >
+                <Clock className="h-3.5 w-3.5" />
+                Verificar No-Shows
+              </button>
+            </div>
           )}
 
           <button
@@ -1297,19 +1352,9 @@ export default function Reservas() {
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Tolerância para No-Show (minutos após início)
-                      </label>
-                      <input
-                        type="number"
-                        min="5"
-                        max="60"
-                        value={toleranciaNoShow}
-                        onChange={(e) => setToleranciaNoShow(e.target.value)}
-                        className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 bg-white"
-                      />
-                    </div>
+                    <p className="text-[11px] text-slate-600">
+                      O sistema usará a tolerância administrativa atual de {toleranciaNoShow} minutos para a verificação de no-show.
+                    </p>
                   </div>
                 )}
               </div>

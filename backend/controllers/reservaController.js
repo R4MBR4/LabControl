@@ -227,7 +227,6 @@ async function createRecorrente(req, res) {
       data_fim_serie,
       hora_inicio,
       hora_fim,
-      tolerancia_no_show_min = 15
     } = req.body;
 
     const usuario_id = req.user.id;
@@ -306,7 +305,7 @@ async function createRecorrente(req, res) {
       finalidade,
       observacoes,
       regra_recorrencia: `semanal:${diasPermitidos.join(',')}`,
-      tolerancia_no_show_min
+      tolerancia_no_show_min: await reservaModel.getToleranciaNoShow()
     });
 
     if (!resultado.success) {
@@ -317,6 +316,31 @@ async function createRecorrente(req, res) {
   } catch (err) {
     console.error('[Reserva Recorrente] Erro:', err);
     res.status(500).json({ error: 'Erro ao criar série recorrente: ' + err.message });
+  }
+}
+
+async function getToleranciaNoShow(req, res) {
+  try {
+    const tolerancia_no_show_min = await reservaModel.getToleranciaNoShow();
+    res.json({ tolerancia_no_show_min });
+  } catch (err) {
+    console.error('[Reserva] Erro ao carregar tolerância de no-show:', err);
+    res.status(500).json({ error: 'Erro ao carregar configuração de no-show: ' + err.message });
+  }
+}
+
+async function updateToleranciaNoShow(req, res) {
+  try {
+    const minutos = Number(req.body?.tolerancia_no_show_min);
+    if (!Number.isInteger(minutos) || minutos < 1 || minutos > 180) {
+      return res.status(400).json({ error: 'Informe uma tolerância inteira entre 1 e 180 minutos.' });
+    }
+
+    const tolerancia_no_show_min = await reservaModel.setToleranciaNoShow(minutos, req.user.id);
+    res.json({ message: 'Tolerância de no-show atualizada.', tolerancia_no_show_min });
+  } catch (err) {
+    console.error('[Reserva] Erro ao salvar tolerância de no-show:', err);
+    res.status(500).json({ error: 'Erro ao salvar configuração de no-show: ' + err.message });
   }
 }
 
@@ -369,10 +393,11 @@ async function marcarNoShow(req, res) {
  */
 async function verificarNoShows(req, res) {
   try {
-    const tolerancia = Number(req.body?.tolerancia || req.query?.tolerancia || 15);
+    const tolerancia = await reservaModel.getToleranciaNoShow();
     const resultado = await reservaModel.verificarNoShowsAutomaticos(tolerancia);
     res.json({
-      message: `Verificação concluída. ${resultado.totalMarcados} reserva(s) identificadas como no-show.`,
+      message: `Verificação concluída com tolerância de ${tolerancia} minutos. ${resultado.totalMarcados} reserva(s) identificadas como no-show.`,
+      tolerancia_no_show_min: tolerancia,
       ...resultado
     });
   } catch (err) {
@@ -389,8 +414,9 @@ module.exports = {
   cancel,
   updateStatus,
   createRecorrente,
+  getToleranciaNoShow,
+  updateToleranciaNoShow,
   cancelarRecorrente,
   marcarNoShow,
   verificarNoShows
 };
-

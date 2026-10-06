@@ -1,6 +1,30 @@
 const { pool, getPrimaryKey, insert, update, remove, findById, findAll, resolveColumn, getTableColumns } = require('./dbHelper');
 
 const TABLE = 'reserva';
+const NO_SHOW_TOLERANCE_KEY = 'tolerancia_no_show_minutos';
+
+async function getToleranciaNoShow() {
+  const [rows] = await pool.query(
+    'SELECT valor FROM `configuracao_sistema` WHERE chave = ? LIMIT 1',
+    [NO_SHOW_TOLERANCE_KEY]
+  );
+  if (!rows[0]) {
+    throw new Error('A configuração de tolerância de no-show não foi inicializada. Aplique a migration 07_configuracao_no_show.sql.');
+  }
+  return Number(rows[0].valor);
+}
+
+async function setToleranciaNoShow(minutos, usuarioId) {
+  await pool.query(`
+    INSERT INTO \`configuracao_sistema\` (chave, valor, atualizado_por_usuario_id)
+    VALUES (?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      valor = VALUES(valor),
+      atualizado_por_usuario_id = VALUES(atualizado_por_usuario_id),
+      atualizado_em = CURRENT_TIMESTAMP
+  `, [NO_SHOW_TOLERANCE_KEY, String(minutos), usuarioId || null]);
+  return getToleranciaNoShow();
+}
 
 async function getAllReservas(filters = {}) {
   const pk = await getPrimaryKey(TABLE);
@@ -392,6 +416,11 @@ async function marcarNoShow(id) {
  * Verificação em lote de no-shows baseada na tolerância configurável (Bloco 08)
  */
 async function verificarNoShowsAutomaticos(toleranciaMin = 15) {
+  const toleranciaConfigurada = Number(toleranciaMin);
+  if (!Number.isInteger(toleranciaConfigurada) || toleranciaConfigurada < 1 || toleranciaConfigurada > 180) {
+    throw new Error('A tolerância para no-show deve estar entre 1 e 180 minutos.');
+  }
+
   // Busca reservas confirmadas cujo início + tolerância já passou, e que não possuem utilização iniciada
   const [candidatos] = await pool.query(`
     SELECT r.id, r.usuario_id, r.data_inicio, r.finalidade
@@ -421,6 +450,8 @@ async function verificarNoShowsAutomaticos(toleranciaMin = 15) {
 
 module.exports = {
   TABLE,
+  getToleranciaNoShow,
+  setToleranciaNoShow,
   getAllReservas,
   getReservaById,
   checkConflict,
@@ -433,4 +464,3 @@ module.exports = {
   marcarNoShow,
   verificarNoShowsAutomaticos
 };
-

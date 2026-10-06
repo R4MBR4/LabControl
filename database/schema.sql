@@ -13,6 +13,7 @@ USE `labcontrol`;
 -- Desativa temporariamente checagens para recriação limpa
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS `configuracao_sistema`;
 DROP TABLE IF EXISTS `capacitacao`;
 DROP TABLE IF EXISTS `consumivel`;
 DROP TABLE IF EXISTS `manutencao`;
@@ -312,6 +313,22 @@ CREATE TABLE `inventario_item` (
     FOREIGN KEY (`decisao_usuario_id`) REFERENCES `usuario` (`id`)
     ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- 12. Tabela: configuracao_sistema (Configurações administrativas)
+-- --------------------------------------------------------
+CREATE TABLE `configuracao_sistema` (
+  `chave` VARCHAR(100) NOT NULL PRIMARY KEY,
+  `valor` VARCHAR(255) NOT NULL,
+  `atualizado_por_usuario_id` INT NULL,
+  `atualizado_em` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_config_sistema_usuario`
+    FOREIGN KEY (`atualizado_por_usuario_id`) REFERENCES `usuario` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `configuracao_sistema` (`chave`, `valor`)
+VALUES ('tolerancia_no_show_minutos', '15');
 
 -- ========================================================
 -- SEEDS INICIAIS (DADOS DE TESTE REALISTAS)
