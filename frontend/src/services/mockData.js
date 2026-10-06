@@ -716,6 +716,163 @@ export function handleMockRequest(method, url, data) {
     return ok({ message: 'Usuário atualizado' });
   }
 
+  // 12. INVENTÁRIOS POR QR
+  if (cleanUrl === '/inventarios') {
+    db.inventarios = db.inventarios || [];
+    db.inventario_itens = db.inventario_itens || [];
+    if (method.toUpperCase() === 'POST') {
+      const esp = db.espacos.find(s => s.id === Number(data.espaco_id));
+      const storedUser = localStorage.getItem('labcontrol_user');
+      const u = storedUser ? JSON.parse(storedUser) : db.usuarios[0];
+      const esperados = db.equipamentos.filter(e => Number(e.espaco_id) === Number(data.espaco_id) && !e.inativo);
+
+      const novo = {
+        id: Date.now(),
+        espaco_id: Number(data.espaco_id),
+        espaco_nome: esp ? esp.nome : 'Laboratório',
+        usuario_id: u.id,
+        usuario_nome: u.nome,
+        status: 'em_andamento',
+        data_inicio: new Date().toISOString(),
+        total_esperados: esperados.length,
+        total_conferidos: 0,
+        total_divergentes: 0,
+        total_nao_localizados: 0,
+        observacoes: data.observacoes || ''
+      };
+      db.inventarios.unshift(novo);
+      saveStorage(db);
+      return ok(novo);
+    }
+    return ok(db.inventarios);
+  }
+
+  if (cleanUrl.match(/\/inventarios\/\d+\/scan/)) {
+    const invId = Number(cleanUrl.split('/')[2]);
+    const inv = (db.inventarios || []).find(i => i.id === invId);
+    if (!inv) return { data: { error: 'Inventário não encontrado' }, status: 404 };
+
+    const term = String(data.scanned_value).trim();
+    const equip = db.equipamentos.find(e => 
+      String(e.id) === term ||
+      (e.codigo_patrimonio && e.codigo_patrimonio.toUpperCase() === term.toUpperCase()) ||
+      (e.patrimonio_ufpi && e.patrimonio_ufpi.toUpperCase() === term.toUpperCase()) ||
+      (e.codigo_labcontrol && e.codigo_labcontrol.toUpperCase() === term.toUpperCase())
+    );
+
+    if (!equip) {
+      return { data: { error: `Equipamento "${term}" não foi encontrado no cadastro.` }, status: 400 };
+    }
+
+    db.inventario_itens = db.inventario_itens || [];
+    const jaLido = db.inventario_itens.find(it => it.inventario_id === invId && it.equipamento_id === equip.id);
+    if (jaLido) {
+      return ok({ jaConferido: true, item: jaLido, equipamento: equip, message: `Equipamento "${equip.nome}" já havia sido registrado nesta sessão.` });
+    }
+
+    const isMatch = Number(equip.espaco_id) === Number(inv.espaco_id);
+    const espEsperado = db.espacos.find(s => s.id === equip.espaco_id);
+    const espEncontrado = db.espacos.find(s => s.id === inv.espaco_id);
+
+    const novoItem = {
+      id: Date.now(),
+      inventario_id: invId,
+      equipamento_id: equip.id,
+      equipamento_nome: equip.nome,
+      codigo_patrimonio: equip.codigo_patrimonio,
+      patrimonio_ufpi: equip.patrimonio_ufpi,
+      codigo_labcontrol: equip.codigo_labcontrol,
+      espaco_esperado_id: equip.espaco_id,
+      espaco_esperado_nome: espEsperado ? espEsperado.nome : 'Outro Espaço',
+      espaco_encontrado_id: inv.espaco_id,
+      espaco_encontrado_nome: espEncontrado ? espEncontrado.nome : 'Espaço Atual',
+      status_conferencia: isMatch ? 'conferido' : 'divergente',
+      decisao_admin: isMatch ? 'conforme' : 'pendente',
+      data_leitura: new Date().toISOString()
+    };
+
+    db.inventario_itens.unshift(novoItem);
+    if (isMatch) inv.total_conferidos += 1;
+    else inv.total_divergentes += 1;
+    saveStorage(db);
+
+    return ok({
+      jaConferido: false,
+      item: novoItem,
+      equipamento: equip,
+      isDivergente: !isMatch,
+      message: isMatch
+        ? `Equipamento "${equip.nome}" conferido com sucesso!`
+        : `Divergência detectada! Pertence ao laboratório "${novoItem.espaco_esperado_nome}".`
+    });
+  }
+
+  if (cleanUrl.match(/\/inventarios\/\d+\/decidir-divergencia/)) {
+    const invId = Number(cleanUrl.split('/')[2]);
+    const item = (db.inventario_itens || []).find(it => it.id === Number(data.item_id));
+    if (item) {
+      if (data.acao === 'transferir') {
+        item.decisao_admin = 'transferir_localizacao';
+        const eq = db.equipamentos.find(e => e.id === item.equipamento_id);
+        if (eq) {
+          eq.espaco_id = item.espaco_encontrado_id;
+          const esp = db.espacos.find(s => s.id === eq.espaco_id);
+          if (esp) eq.espaco_nome = esp.nome;
+        }
+      } else {
+        item.decisao_admin = 'manter_localizacao_original';
+      }
+      const storedUser = localStorage.getItem('labcontrol_user');
+      const u = storedUser ? JSON.parse(storedUser) : db.usuarios[0];
+      item.decisao_usuario_nome = u.nome;
+      item.decisao_data = new Date().toISOString();
+      saveStorage(db);
+    }
+    const inv = db.inventarios.find(i => i.id === invId);
+    return ok({ message: 'Decisão registrada', inventario: inv });
+  }
+
+  if (cleanUrl.match(/\/inventarios\/\d+\/finalizar/)) {
+    const invId = Number(cleanUrl.split('/')[2]);
+    const inv = (db.inventarios || []).find(i => i.id === invId);
+    if (inv) {
+      inv.status = 'concluido';
+      inv.data_fim = new Date().toISOString();
+      const esperados = db.equipamentos.filter(e => Number(e.espaco_id) === Number(inv.espaco_id) && !e.inativo);
+      const lidosIds = (db.inventario_itens || []).filter(it => it.inventario_id === invId).map(it => it.equipamento_id);
+      const naoLoc = esperados.filter(e => !lidosIds.includes(e.id));
+      inv.total_nao_localizados = naoLoc.length;
+      naoLoc.forEach(nl => {
+        db.inventario_itens.push({
+          id: Date.now() + Math.random(),
+          inventario_id: invId,
+          equipamento_id: nl.id,
+          equipamento_nome: nl.nome,
+          codigo_patrimonio: nl.codigo_patrimonio,
+          patrimonio_ufpi: nl.patrimonio_ufpi,
+          codigo_labcontrol: nl.codigo_labcontrol,
+          espaco_esperado_id: inv.espaco_id,
+          espaco_encontrado_id: inv.espaco_id,
+          status_conferencia: 'nao_localizado',
+          decisao_admin: 'pendente'
+        });
+      });
+      saveStorage(db);
+      return ok({ message: 'Inventário concluído', inventario: inv });
+    }
+    return ok({ message: 'Inventário finalizado' });
+  }
+
+  if (cleanUrl.match(/\/inventarios\/\d+/)) {
+    const invId = Number(cleanUrl.split('/')[2]);
+    const inv = (db.inventarios || []).find(i => i.id === invId);
+    if (inv) {
+      const esperados = db.equipamentos.filter(e => Number(e.espaco_id) === Number(inv.espaco_id) && !e.inativo);
+      const itens = (db.inventario_itens || []).filter(it => it.inventario_id === invId);
+      return ok({ ...inv, esperados, itens });
+    }
+  }
+
   // Fallback genérico para qualquer outra rota
   return ok({ message: 'Operação simulada com sucesso (Modo Demo)' });
 }

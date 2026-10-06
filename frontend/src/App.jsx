@@ -16,6 +16,7 @@ import Manutencao from './pages/Manutencao';
 import Consumiveis from './pages/Consumiveis';
 import Capacitacoes from './pages/Capacitacoes';
 import Usuarios from './pages/Usuarios';
+import InventarioQR from './pages/InventarioQR';
 
 function LayoutWithNavbar() {
   return (
@@ -33,6 +34,7 @@ function LayoutWithNavbar() {
           <Route path="/ocorrencias" element={<Ocorrencias />} />
           <Route path="/consumiveis" element={<Consumiveis />} />
           <Route path="/capacitacoes" element={<Capacitacoes />} />
+          <Route path="/inventario" element={<InventarioQR />} />
 
           {/* Rotas exclusivas do Administrador */}
           <Route element={<ProtectedRoute adminOnly={true} />}>

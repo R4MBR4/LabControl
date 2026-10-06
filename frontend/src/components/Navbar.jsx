@@ -16,7 +16,8 @@ import {
   Menu,
   X,
   ShieldCheck,
-  User as UserIcon
+  User as UserIcon,
+  ClipboardCheck
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -42,6 +43,7 @@ export default function Navbar() {
   ];
 
   if (isAdmin) {
+    navLinks.push({ name: 'Inventário QR', path: '/inventario', icon: ClipboardCheck });
     navLinks.push({ name: 'Manutenção', path: '/manutencao', icon: Wrench });
     navLinks.push({ name: 'Usuários', path: '/usuarios', icon: Users });
   }
