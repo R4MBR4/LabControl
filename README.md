@@ -33,6 +33,7 @@ LabControl/
 │   │   ├── usuarioController.js
 │   │   ├── espacoController.js
 │   │   ├── equipamentoController.js
+│   │   ├── integracaoController.js # Importação e exportação CSV
 │   │   ├── reservaController.js
 │   │   ├── utilizacaoController.js
 │   │   ├── ocorrenciaController.js
@@ -53,6 +54,7 @@ LabControl/
 │   │   │   ├── Navbar.jsx
 │   │   │   ├── ProtectedRoute.jsx
 │   │   │   ├── QRCodeModal.jsx # Geração e impressão de etiquetas QR Code
+│   │   │   ├── ImportacaoExportacaoCSV.jsx # Prévia de importação e exportações CSV
 │   │   │   └── QRScanner.jsx   # Leitor via câmera ou imagem
 │   │   ├── pages/
 │   │   │   ├── Login.jsx
@@ -99,6 +101,11 @@ LabControl/
 
 6. **Ciclo Completo de Manutenção:**
    O encaminhamento administrativo cria uma ordem de serviço vinculada à ocorrência. A conclusão exige laudo técnico; o equipamento só retorna a `disponivel` quando não há outra manutenção aberta nem inativação ativa. Ocorrências e ordens não podem ser excluídas pela API.
+
+7. **Importação e exportação CSV:**
+   Administradores podem validar equipamentos em lote antes de inserir. A prévia informa linhas válidas, patrimônios duplicados, laboratórios inexistentes e outros erros; a importação é transacional e recusa o arquivo inteiro enquanto houver linhas inválidas. Os CSVs podem ser exportados para equipamentos, laboratórios, reservas, utilizações, ocorrências, manutenções, consumíveis e inventários (incluindo seus itens); fotos e evidências são omitidas.
+
+   Colunas obrigatórias para importar equipamentos: `patrimonio_ufpi`, `nome` e `laboratorio` (nome ou código do espaço). Categoria permanece texto livre, como no cadastro manual. Status aceitos: `disponivel`, `em_uso`, `manutencao` ou `inativo`. Arquivos CSV são limitados a 10 MB.
 
 ---
 

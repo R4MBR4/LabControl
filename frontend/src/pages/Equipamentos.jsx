@@ -5,6 +5,7 @@ import api from '../services/api';
 import QRCodeModal from '../components/QRCodeModal';
 import BatchQRCodeModal from '../components/BatchQRCodeModal';
 import QRPostInstallTester from '../components/QRPostInstallTester';
+import ImportacaoExportacaoCSV from '../components/ImportacaoExportacaoCSV';
 import {
   Cpu,
   Plus,
@@ -45,6 +46,7 @@ export default function Equipamentos() {
   const [selectedQR, setSelectedQR] = useState(null);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [testModalOpen, setTestModalOpen] = useState(false);
+  const [csvModalOpen, setCsvModalOpen] = useState(false);
 
   // Seleção Múltipla para Lote
   const [selectedIds, setSelectedIds] = useState([]);
@@ -360,13 +362,22 @@ export default function Equipamentos() {
           </button>
 
           {isAdmin && (
-            <button
-              onClick={() => handleOpenModal()}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-sm transition"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Cadastrar Novo</span>
-            </button>
+            <>
+              <button
+                onClick={() => setCsvModalOpen(true)}
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold border border-slate-200 shadow-sm transition"
+              >
+                <Upload className="w-4 h-4" />
+                <span>CSV</span>
+              </button>
+              <button
+                onClick={() => handleOpenModal()}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-sm transition"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Cadastrar Novo</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -1085,6 +1096,12 @@ export default function Equipamentos() {
             </form>
           </div>
         </div>
+      )}
+      {csvModalOpen && (
+        <ImportacaoExportacaoCSV
+          onClose={() => setCsvModalOpen(false)}
+          onImported={loadData}
+        />
       )}
     </div>
   );
