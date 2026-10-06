@@ -178,6 +178,20 @@ async function getHistoricoMovimentacoes(id, executor = pool) {
   return rows;
 }
 
+async function getAllHistoricoMovimentacoes() {
+  const [rows] = await pool.query(`
+    SELECT m.*, u.nome AS usuario_nome,
+           c.espaco_id, s.nome AS espaco_nome,
+           COALESCE(c.nome, m.consumivel_nome) AS consumivel_nome
+    FROM \`${MOVEMENT_TABLE}\` m
+    LEFT JOIN \`${TABLE}\` c ON c.id = m.consumivel_id
+    LEFT JOIN espaco s ON s.id = c.espaco_id
+    LEFT JOIN usuario u ON u.id = m.usuario_id
+    ORDER BY m.criado_em DESC, m.id DESC
+  `);
+  return rows;
+}
+
 async function deleteConsumivel(id) {
   return remove(TABLE, id);
 }
@@ -192,5 +206,6 @@ module.exports = {
   updateConsumivel,
   movimentarEstoque,
   getHistoricoMovimentacoes,
+  getAllHistoricoMovimentacoes,
   deleteConsumivel
 };

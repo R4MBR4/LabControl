@@ -78,6 +78,16 @@ async function historico(req, res) {
   }
 }
 
+async function historicoGeral(req, res) {
+  try {
+    const movimentacoes = await consumivelModel.getAllHistoricoMovimentacoes();
+    res.json(movimentacoes);
+  } catch (err) {
+    console.error('[Consumivel] Erro ao carregar relatório de movimentações:', err);
+    res.status(500).json({ error: 'Não foi possível carregar o relatório de movimentações.' });
+  }
+}
+
 /**
  * Regra de negócio crítica: movimentação de estoque com proteção contra saldo negativo
  */
@@ -147,6 +157,7 @@ module.exports = {
   list,
   getById,
   historico,
+  historicoGeral,
   create,
   update,
   movimentar,

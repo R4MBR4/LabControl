@@ -5,7 +5,43 @@ const initialData = {
   configuracoes: {
     tolerancia_no_show_min: 15
   },
-  consumivel_movimentacoes: [],
+  consumivel_movimentacoes: [
+    {
+      id: 1, consumivel_id: 1, consumivel_nome: 'Filamento 3D PLA Preto 1.75mm (1kg)',
+      tipo: 'entrada', quantidade_anterior: 0, quantidade_movimentada: 5, quantidade_resultante: 5,
+      usuario_id: 1, usuario_nome: 'Administrador Demo', espaco_id: 2,
+      espaco_nome: 'Espaço Maker & Prototipagem (FabLab)',
+      observacao: 'Saldo inicial demonstrativo', criado_em: new Date(Date.now() - 30 * 86400000).toISOString()
+    },
+    {
+      id: 2, consumivel_id: 1, consumivel_nome: 'Filamento 3D PLA Preto 1.75mm (1kg)',
+      tipo: 'consumo', quantidade_anterior: 5, quantidade_movimentada: 3, quantidade_resultante: 2,
+      usuario_id: 2, usuario_nome: 'Prof. Carlos Santos', espaco_id: 2,
+      espaco_nome: 'Espaço Maker & Prototipagem (FabLab)',
+      observacao: 'Impressões de demonstração', criado_em: new Date(Date.now() - 5 * 86400000).toISOString()
+    },
+    {
+      id: 3, consumivel_id: 2, consumivel_nome: 'Álcool Isopropílico 99.8% (1L)',
+      tipo: 'entrada', quantidade_anterior: 0, quantidade_movimentada: 2, quantidade_resultante: 2,
+      usuario_id: 1, usuario_nome: 'Administrador Demo', espaco_id: 2,
+      espaco_nome: 'Espaço Maker & Prototipagem (FabLab)',
+      observacao: 'Saldo inicial demonstrativo', criado_em: new Date(Date.now() - 20 * 86400000).toISOString()
+    },
+    {
+      id: 4, consumivel_id: 2, consumivel_nome: 'Álcool Isopropílico 99.8% (1L)',
+      tipo: 'consumo', quantidade_anterior: 2, quantidade_movimentada: 1, quantidade_resultante: 1,
+      usuario_id: 3, usuario_nome: 'Mariana Lima', espaco_id: 2,
+      espaco_nome: 'Espaço Maker & Prototipagem (FabLab)',
+      observacao: 'Limpeza de bancada', criado_em: new Date(Date.now() - 2 * 86400000).toISOString()
+    },
+    {
+      id: 5, consumivel_id: 3, consumivel_nome: 'Placa MDF Cru 3mm 60x40cm',
+      tipo: 'reposicao', quantidade_anterior: 40, quantidade_movimentada: 5, quantidade_resultante: 45,
+      usuario_id: 1, usuario_nome: 'Administrador Demo', espaco_id: 2,
+      espaco_nome: 'Espaço Maker & Prototipagem (FabLab)',
+      observacao: 'Reposição demonstrativa', criado_em: new Date(Date.now() - 86400000).toISOString()
+    }
+  ],
   usuarios: [
     { id: 1, nome: 'Administrador Demo', email: 'admin@labcontrol.com', perfil: 'ADMIN', matricula: 'ADM-001', status: 'ATIVO', departamento: 'Coordenação de Laboratórios' },
     { id: 2, nome: 'Prof. Carlos Santos', email: 'professor@labcontrol.com', perfil: 'PROFESSOR', matricula: 'DOC-102', status: 'ATIVO', departamento: 'Engenharia e Automação' },
@@ -68,6 +104,21 @@ const initialData = {
       data_fim: new Date(Date.now() + 180000000).toISOString(),
       finalidade: 'Treinamento Institucional de Docentes',
       status: 'pendente'
+    },
+    {
+      id: 4,
+      usuario_id: 3,
+      usuario_nome: 'Mariana Lima',
+      espaco_id: 3,
+      espaco_nome: 'Laboratório de Robótica e Automação',
+      equipamento_id: 3,
+      equipamento_nome: 'Osciloscópio Digital Tektronix 50MHz',
+      data_inicio: new Date(Date.now() - 7 * 86400000).toISOString(),
+      data_fim: new Date(Date.now() - 7 * 86400000 + 7200000).toISOString(),
+      no_show: 1,
+      no_show_at: new Date(Date.now() - 7 * 86400000 + 3600000).toISOString(),
+      finalidade: 'Demonstração de relatório de no-show',
+      status: 'no_show'
     }
   ],
   utilizacoes: [
@@ -854,7 +905,35 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
       saveStorage(db);
       return ok(nova);
     }
-    return ok(db.reservas);
+    let reservas = db.reservas || [];
+    if (requestParams.no_show !== undefined) {
+      const noShow = requestParams.no_show === true || requestParams.no_show === 1 || requestParams.no_show === '1';
+      reservas = reservas.filter((reserva) => Boolean(reserva.no_show) === noShow);
+    }
+    if (requestParams.status) {
+      reservas = reservas.filter((reserva) => String(reserva.status || '').toLowerCase() === String(requestParams.status).toLowerCase());
+    }
+    if (requestParams.equipamento_id) {
+      reservas = reservas.filter((reserva) => Number(reserva.equipamento_id) === Number(requestParams.equipamento_id));
+    }
+    if (requestParams.espaco_id) {
+      reservas = reservas.filter((reserva) => {
+        const equipamento = db.equipamentos.find((item) => Number(item.id) === Number(reserva.equipamento_id));
+        return Number(reserva.espaco_id || equipamento?.espaco_id) === Number(requestParams.espaco_id);
+      });
+    }
+    if (requestParams.usuario_id) {
+      reservas = reservas.filter((reserva) => Number(reserva.usuario_id) === Number(requestParams.usuario_id));
+    }
+    if (requestParams.data_inicio_de) {
+      const minDate = new Date(`${requestParams.data_inicio_de}T00:00:00`).getTime();
+      reservas = reservas.filter((reserva) => new Date(reserva.data_inicio).getTime() >= minDate);
+    }
+    if (requestParams.data_fim_ate) {
+      const maxDate = new Date(`${requestParams.data_fim_ate}T23:59:59`).getTime();
+      reservas = reservas.filter((reserva) => new Date(reserva.data_fim).getTime() <= maxDate);
+    }
+    return ok(reservas);
   }
 
   if (cleanUrl === '/reservas/calendario') {
@@ -1237,6 +1316,21 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
   }
 
   // 9. CONSUMÍVEIS
+  if (cleanUrl === '/consumiveis/historico') {
+    const rows = (db.consumivel_movimentacoes || []).map((movement) => {
+      const consumivel = db.consumiveis.find((item) => Number(item.id) === Number(movement.consumivel_id));
+      const usuario = db.usuarios.find((item) => Number(item.id) === Number(movement.usuario_id));
+      const espaco = db.espacos.find((item) => Number(item.id) === Number(consumivel?.espaco_id));
+      return {
+        ...movement,
+        consumivel_nome: movement.consumivel_nome || consumivel?.nome || 'Consumível removido',
+        espaco_id: consumivel?.espaco_id || null,
+        espaco_nome: espaco?.nome || consumivel?.espaco_nome || '',
+        usuario_nome: movement.usuario_nome || usuario?.nome || ''
+      };
+    });
+    return ok(rows.sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em)));
+  }
   if (cleanUrl === '/consumiveis') {
     if (method.toUpperCase() === 'POST') {
       const esp = db.espacos.find(s => s.id === Number(data.espaco_id));
@@ -1264,6 +1358,8 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
           quantidade_resultante: quantity,
           usuario_id: Number(currentUser?.id) || null,
           usuario_nome: currentUser?.nome || '',
+          espaco_id: novo.espaco_id || null,
+          espaco_nome: novo.espaco_nome || '',
           observacao: 'Estoque inicial do cadastro',
           criado_em: new Date().toISOString()
         });
@@ -1314,6 +1410,8 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
         quantidade_resultante: after,
         usuario_id: Number(currentUser?.id) || null,
         usuario_nome: currentUser?.nome || '',
+        espaco_id: item.espaco_id || null,
+        espaco_nome: item.espaco_nome || '',
         observacao: data.observacao || null,
         criado_em: new Date().toISOString()
       };

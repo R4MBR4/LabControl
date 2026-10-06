@@ -15,10 +15,12 @@ async function getAllUtilizacoes(filters = {}) {
     SELECT u.*,
            us.nome AS usuario_nome, us.email AS usuario_email,
            e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo,
-           e.codigo_labcontrol AS equipamento_labcontrol, e.patrimonio_ufpi AS equipamento_patrimonio_ufpi
+           e.codigo_labcontrol AS equipamento_labcontrol, e.patrimonio_ufpi AS equipamento_patrimonio_ufpi,
+           e.espaco_id, esp.nome AS espaco_nome
     FROM \`${TABLE}\` u
     LEFT JOIN \`usuario\` us ON u.\`${fkUser}\` = us.\`${userPk}\`
     LEFT JOIN \`equipamento\` e ON u.\`${fkEquip}\` = e.\`${equipPk}\`
+    LEFT JOIN espaco esp ON e.espaco_id = esp.id
   `;
 
   const whereClauses = [];

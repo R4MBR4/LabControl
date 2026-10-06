@@ -10,10 +10,13 @@ async function getAllCapacitacoes() {
   const fkEquip = await resolveColumn(TABLE, ['equipamento_id', 'id_equipamento']);
 
   const sql = `
-    SELECT c.*, u.nome AS usuario_nome, u.email AS usuario_email, e.nome AS equipamento_nome
+    SELECT c.*, u.nome AS usuario_nome, u.email AS usuario_email,
+           e.nome AS equipamento_nome, COALESCE(c.espaco_id, e.espaco_id) AS espaco_id,
+           s.nome AS espaco_nome
     FROM \`${TABLE}\` c
     LEFT JOIN \`usuario\` u ON c.\`${fkUser}\` = u.\`${userPk}\`
     LEFT JOIN \`equipamento\` e ON c.\`${fkEquip}\` = e.\`${equipPk}\`
+    LEFT JOIN \`espaco\` s ON s.id = COALESCE(c.espaco_id, e.espaco_id)
     ORDER BY c.\`${pk}\` DESC
   `;
   const [rows] = await pool.query(sql);

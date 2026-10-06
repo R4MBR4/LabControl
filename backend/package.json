@@ -12,7 +12,8 @@
     "test:sugestoes-reserva": "node teste-sugestoes-reserva.js",
     "test:categorias-importacao": "node teste-categorias-importacao.js",
     "test:historico-consumiveis": "node teste-historico-consumiveis.js",
-    "test:calendario-reservas": "node teste-calendario-reservas.js"
+    "test:calendario-reservas": "node teste-calendario-reservas.js",
+    "test:relatorios": "node teste-relatorios.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

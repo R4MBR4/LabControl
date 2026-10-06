@@ -6,10 +6,11 @@ import LoadError from '../components/LoadError';
 const REPORTS = {
   inventario: {
     label: 'Inventário',
-    description: 'Situação patrimonial dos equipamentos cadastrados, incluindo itens inativos.',
+    description: 'Situação patrimonial e dados técnicos dos equipamentos cadastrados, incluindo itens inativos.',
     url: '/equipamentos',
     params: { incluir_inativos: 'true' },
-    dateField: null,
+    dateField: (row) => row.data_aquisicao || row.data_compra,
+    filters: ['espaco', 'equipamento'],
     status: (row) => isTrue(row.inativo) ? 'Inativo' : row.status || 'Sem status',
     metrics: [
       ['Equipamentos', (rows) => rows.length],
@@ -24,6 +25,10 @@ const REPORTS = {
       ['categoria', 'Categoria'],
       ['espaco_nome', 'Laboratório'],
       ['localizacao_detalhada', 'Localização'],
+      ['marca', 'Marca'],
+      ['modelo', 'Modelo'],
+      ['data_aquisicao', 'Aquisição', (row) => formatDate(row.data_aquisicao || row.data_compra)],
+      ['fornecedor', 'Fornecedor'],
       ['status', 'Status', (row) => isTrue(row.inativo) ? 'Inativo' : row.status]
     ]
   },
@@ -32,6 +37,7 @@ const REPORTS = {
     description: 'Histórico de check-ins e check-outs dos equipamentos.',
     url: '/utilizacoes',
     dateField: (row) => row.data_checkin || row.data_inicio || row.checkin || row.created_at,
+    filters: ['espaco', 'equipamento', 'usuario'],
     status: (row) => row.status || 'Sem status',
     metrics: [
       ['Registros', (rows) => rows.length],
@@ -54,6 +60,7 @@ const REPORTS = {
     description: 'Reservas no período, com recurso, responsável, status e registro de no-show.',
     url: '/reservas',
     dateField: (row) => row.data_inicio,
+    filters: ['espaco', 'equipamento', 'usuario'],
     status: (row) => row.status || 'Sem status',
     metrics: [
       ['Reservas', (rows) => rows.length],
@@ -71,11 +78,86 @@ const REPORTS = {
       ['no_show', 'No-show', (row) => isTrue(row.no_show) ? 'Sim' : 'Não']
     ]
   },
+  no_show: {
+    label: 'No-show',
+    description: 'Reservas não utilizadas após a tolerância, sem aplicação automática de punição.',
+    url: '/reservas',
+    params: { no_show: '1' },
+    dateField: (row) => row.data_inicio,
+    filters: ['espaco', 'equipamento', 'usuario'],
+    status: (row) => row.status || (isTrue(row.no_show) ? 'No-show' : 'Sem status'),
+    metrics: [
+      ['No-shows', (rows) => rows.length],
+      ['Equipamentos', (rows) => rows.filter((row) => row.equipamento_id).length],
+      ['Espaços', (rows) => rows.filter((row) => !row.equipamento_id && row.espaco_id).length],
+      ['Séries recorrentes', (rows) => rows.filter((row) => row.grupo_recorrencia_id).length]
+    ],
+    columns: [
+      ['data_inicio', 'Início', (row) => formatDate(row.data_inicio)],
+      ['data_fim', 'Fim', (row) => formatDate(row.data_fim)],
+      ['recurso', 'Recurso', (row) => row.equipamento_nome || row.espaco_nome || '—'],
+      ['espaco_nome', 'Laboratório'],
+      ['usuario_nome', 'Solicitante'],
+      ['finalidade', 'Finalidade'],
+      ['status', 'Status'],
+      ['no_show_at', 'Registrado em', (row) => formatDate(row.no_show_at)]
+    ]
+  },
+  consumo: {
+    label: 'Consumo',
+    description: 'Movimentações históricas de estoque com saldos antes e depois, responsável e observação.',
+    url: '/consumiveis/historico',
+    dateField: (row) => row.criado_em,
+    filters: ['espaco', 'usuario'],
+    status: (row) => row.tipo || 'Sem tipo',
+    metrics: [
+      ['Movimentações', (rows) => rows.length],
+      ['Consumos', (rows) => rows.filter((row) => normalized(row.tipo) === 'consumo').length],
+      ['Saídas', (rows) => rows.filter((row) => normalized(row.tipo) === 'saida').length],
+      ['Entradas e reposições', (rows) => rows.filter((row) => ['entrada', 'reposicao'].includes(normalized(row.tipo))).length]
+    ],
+    columns: [
+      ['criado_em', 'Data/Hora', (row) => formatDate(row.criado_em)],
+      ['consumivel_nome', 'Consumível'],
+      ['tipo', 'Movimentação'],
+      ['quantidade_anterior', 'Saldo anterior'],
+      ['quantidade_movimentada', 'Quantidade'],
+      ['quantidade_resultante', 'Saldo resultante'],
+      ['espaco_nome', 'Laboratório'],
+      ['usuario_nome', 'Responsável'],
+      ['observacao', 'Motivo/observação']
+    ]
+  },
+  capacitacao: {
+    label: 'Capacitação',
+    description: 'Capacitações, equipamentos e laboratórios associados, com datas e situação.',
+    url: '/capacitacoes',
+    dateField: (row) => row.data_realizacao || row.data_validade || row.validade || row.created_at,
+    filters: ['espaco', 'equipamento', 'usuario'],
+    status: (row) => row.status || 'Sem status',
+    metrics: [
+      ['Registros', (rows) => rows.length],
+      ['Concluídas', (rows) => rows.filter((row) => normalized(row.status).includes('conclu')).length],
+      ['Abertas', (rows) => rows.filter((row) => normalized(row.status) === 'aberta').length],
+      ['Equipamentos vinculados', (rows) => rows.filter((row) => row.equipamento_id).length]
+    ],
+    columns: [
+      ['titulo', 'Capacitação', (row) => row.titulo || row.nome],
+      ['equipamento_nome', 'Equipamento'],
+      ['espaco_nome', 'Laboratório'],
+      ['usuario_nome', 'Usuário'],
+      ['instrutor', 'Instrutor'],
+      ['data_realizacao', 'Data', (row) => formatDate(row.data_realizacao || row.data_validade || row.validade || row.created_at)],
+      ['carga_horaria', 'Carga horária'],
+      ['status', 'Status']
+    ]
+  },
   ocorrencias: {
     label: 'Ocorrências',
     description: 'Acompanhamento das ocorrências registradas e de suas prioridades.',
     url: '/ocorrencias',
     dateField: (row) => row.data_registro || row.data_criacao || row.created_at,
+    filters: ['espaco', 'equipamento', 'usuario'],
     status: (row) => row.status || 'Sem status',
     metrics: [
       ['Ocorrências', (rows) => rows.length],
@@ -98,6 +180,7 @@ const REPORTS = {
     description: 'Ordens de serviço, situação, responsável e custos registrados.',
     url: '/manutencoes',
     dateField: (row) => row.data_inicio || row.data_agendamento || row.created_at,
+    filters: ['equipamento'],
     status: (row) => row.status || 'Sem status',
     metrics: [
       ['Ordens', (rows) => rows.length],
@@ -120,6 +203,7 @@ const REPORTS = {
     description: 'Posição atual dos consumíveis e alerta para saldos no mínimo ou abaixo dele.',
     url: '/consumiveis',
     dateField: null,
+    filters: ['espaco'],
     status: (row) => Number(row.quantidade || 0) <= Number(row.quantidade_minima || 0) ? 'Abaixo do mínimo' : 'Regular',
     metrics: [
       ['Itens cadastrados', (rows) => rows.length],
@@ -177,6 +261,22 @@ function cellValue(row, [key, , formatter]) {
   return display === null || display === undefined || display === '' ? '—' : String(display);
 }
 
+function dimensionId(row, dimension) {
+  if (dimension === 'espaco') {
+    return row.espaco_id || row.equipamento_espaco_id || '';
+  }
+  if (dimension === 'equipamento') {
+    return row.equipamento_id || row.id_equipamento || (row.codigo_patrimonio ? row.id : '');
+  }
+  return row.usuario_id || row.id_usuario || '';
+}
+
+function dimensionName(row, dimension) {
+  if (dimension === 'espaco') return row.espaco_nome || row.equipamento_espaco_nome || '';
+  if (dimension === 'equipamento') return row.equipamento_nome || row.nome || '';
+  return row.usuario_nome || '';
+}
+
 function csvEscape(value) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`;
 }
@@ -189,6 +289,9 @@ export default function Relatorios() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [spaceFilter, setSpaceFilter] = useState('');
+  const [equipmentFilter, setEquipmentFilter] = useState('');
+  const [userFilter, setUserFilter] = useState('');
   const latestRequest = useRef(0);
   const report = REPORTS[activeReport];
   const sourceRows = dataByReport[activeReport];
@@ -242,8 +345,28 @@ export default function Relatorios() {
     setStatusFilter('');
     setDateFrom('');
     setDateTo('');
+    setSpaceFilter('');
+    setEquipmentFilter('');
+    setUserFilter('');
     loadReport(activeReport);
   }, [activeReport]);
+
+  const dimensionOptions = useMemo(() => {
+    const rows = sourceRows || [];
+    return ['espaco', 'equipamento', 'usuario'].reduce((options, dimension) => {
+      if (!report.filters?.includes(dimension)) return options;
+      const unique = new Map();
+      rows.forEach((row) => {
+        const id = dimensionId(row, dimension);
+        const name = dimensionName(row, dimension);
+        if (id !== '' && name) unique.set(String(id), name);
+      });
+      options[dimension] = [...unique.entries()]
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+      return options;
+    }, {});
+  }, [sourceRows, report]);
 
   const rows = useMemo(() => {
     if (!sourceRows) return [];
@@ -252,13 +375,16 @@ export default function Relatorios() {
       __reportStatus: report.status(row)
     })).filter((row) => {
       if (statusFilter && normalized(row.__reportStatus) !== normalized(statusFilter)) return false;
+      if (spaceFilter && String(dimensionId(row, 'espaco')) !== spaceFilter) return false;
+      if (equipmentFilter && String(dimensionId(row, 'equipamento')) !== equipmentFilter) return false;
+      if (userFilter && String(dimensionId(row, 'usuario')) !== userFilter) return false;
       if (report.dateField && (dateFrom || dateTo)) {
         const rowDate = dateInputValue(report.dateField(row));
         if (!rowDate || (dateFrom && rowDate < dateFrom) || (dateTo && rowDate > dateTo)) return false;
       }
       return true;
     });
-  }, [sourceRows, report, dateFrom, dateTo, statusFilter]);
+  }, [sourceRows, report, dateFrom, dateTo, statusFilter, spaceFilter, equipmentFilter, userFilter]);
 
   const statusOptions = useMemo(
     () => [...new Set((sourceRows || []).map((row) => report.status(row)).filter(Boolean))]
@@ -290,7 +416,7 @@ export default function Relatorios() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Análise operacional</p>
           <h1 className="mt-1 text-2xl font-bold text-slate-900">Relatórios</h1>
-          <p className="mt-1 max-w-2xl text-sm text-slate-500">Consulte indicadores e exporte os dados filtrados de inventário, utilização, reservas, ocorrências, manutenção e estoque.</p>
+          <p className="mt-1 max-w-2xl text-sm text-slate-500">Consulte indicadores de equipamentos, reservas, no-shows, consumo, capacitações e demais operações; exporte os dados filtrados em CSV.</p>
         </div>
         <button
           type="button"
@@ -358,9 +484,43 @@ export default function Relatorios() {
                 </select>
               </label>
             )}
+            {report.filters?.includes('espaco') && dimensionOptions.espaco?.length > 0 && (
+              <label className="grid gap-1 text-[11px] font-medium text-slate-600">
+                Laboratório
+                <select value={spaceFilter} onChange={(event) => setSpaceFilter(event.target.value)} className="min-w-36 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs">
+                  <option value="">Todos</option>
+                  {dimensionOptions.espaco.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                </select>
+              </label>
+            )}
+            {report.filters?.includes('equipamento') && dimensionOptions.equipamento?.length > 0 && (
+              <label className="grid gap-1 text-[11px] font-medium text-slate-600">
+                Equipamento
+                <select value={equipmentFilter} onChange={(event) => setEquipmentFilter(event.target.value)} className="min-w-36 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs">
+                  <option value="">Todos</option>
+                  {dimensionOptions.equipamento.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                </select>
+              </label>
+            )}
+            {report.filters?.includes('usuario') && dimensionOptions.usuario?.length > 0 && (
+              <label className="grid gap-1 text-[11px] font-medium text-slate-600">
+                Usuário
+                <select value={userFilter} onChange={(event) => setUserFilter(event.target.value)} className="min-w-36 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs">
+                  <option value="">Todos</option>
+                  {dimensionOptions.usuario.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                </select>
+              </label>
+            )}
             <button
               type="button"
-              onClick={() => { setDateFrom(''); setDateTo(''); setStatusFilter(''); }}
+              onClick={() => {
+                setDateFrom('');
+                setDateTo('');
+                setStatusFilter('');
+                setSpaceFilter('');
+                setEquipmentFilter('');
+                setUserFilter('');
+              }}
               className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
             >
               <RotateCcw className="h-3.5 w-3.5" />

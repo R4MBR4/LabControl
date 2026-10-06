@@ -6,6 +6,7 @@ const { authenticateToken, authorizeAdmin } = require('../middlewares/auth');
 router.use(authenticateToken);
 
 router.get('/', consumivelController.list);
+router.get('/historico', authorizeAdmin, consumivelController.historicoGeral);
 router.get('/:id/historico', consumivelController.historico);
 router.get('/:id', consumivelController.getById);
 
