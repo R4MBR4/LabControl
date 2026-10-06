@@ -46,6 +46,23 @@ const FIELD_ALIASES = {
   observacoes: ['observacoes', 'observacao']
 };
 const IMPORT_HEADERS = new Set(Object.values(FIELD_ALIASES).flat().map(normalizeHeader));
+const CATEGORY_SUGGESTIONS = [
+  'Análise e medição',
+  'Armazenamento',
+  'Computação',
+  'Eletrônica',
+  'Fabricação digital',
+  'Informática',
+  'Instrumentação',
+  'Laboratório',
+  'Mobiliário',
+  'Óptica',
+  'Química',
+  'Robótica',
+  'Segurança',
+  'Outro'
+];
+const KEEP_ORIGINAL_CATEGORY = '__manter_original__';
 const FIELD_LIMITS = {
   patrimonio_ufpi: 50,
   nome: 100,
@@ -103,7 +120,10 @@ function normalizeBoolean(value) {
   return null;
 }
 
-async function validateEquipmentCsv(csv, executor = pool, lockExisting = false) {
+async function validateEquipmentCsv(csv, executor = pool, lockExisting = false, options = {}) {
+  const categoryMappings = Object.fromEntries(
+    Object.entries(options.categoryMappings || {}).map(([key, value]) => [normalizeHeader(key), value])
+  );
   const parsed = parseCsv(csv);
   const headerMap = new Map(parsed.headers.map((header) => [normalizeHeader(header), header]));
   const normalizedHeaders = parsed.headers.map(normalizeHeader);
@@ -178,6 +198,19 @@ async function validateEquipmentCsv(csv, executor = pool, lockExisting = false) 
     });
   });
 
+  const [existingCategories] = await executor.query(`
+    SELECT DISTINCT categoria
+    FROM equipamento
+    WHERE categoria IS NOT NULL AND TRIM(categoria) <> ''
+    ORDER BY categoria
+  `);
+  const categoryByKey = new Map();
+  [...CATEGORY_SUGGESTIONS, ...existingCategories.map((row) => row.categoria)].forEach((category) => {
+    const key = normalizeHeader(category);
+    if (key && !categoryByKey.has(key)) categoryByKey.set(key, String(category).trim());
+  });
+  const categoryCatalog = [...categoryByKey.values()];
+
   const mappedRows = parsed.rows.map((record) => ({
     line: record.line,
     data: mapCsvRow(parsed.headers, record.values),
@@ -191,6 +224,7 @@ async function validateEquipmentCsv(csv, executor = pool, lockExisting = false) 
 
   const rows = mappedRows.map(({ line, data, columnCountError }) => {
     const errors = [];
+    const warnings = [];
     if (columnCountError) errors.push('A quantidade de campos desta linha não corresponde ao cabeçalho.');
     const labId = spaceByLabel.get(normalizeIdentifier(data.laboratorio));
     if (!data.patrimonio_ufpi) errors.push('Patrimônio UFPI é obrigatório.');
@@ -205,6 +239,33 @@ async function validateEquipmentCsv(csv, executor = pool, lockExisting = false) 
     }
     if (data.status && !normalizeStatus(data.status)) {
       errors.push(`Status inválido: "${data.status}". Use disponível, em_uso, manutencao ou inativo.`);
+    }
+
+    let categoria = data.categoria || null;
+    let categoryPending = false;
+    if (categoria) {
+      const key = normalizeHeader(categoria);
+      const knownCategory = categoryByKey.get(key);
+      if (knownCategory) {
+        categoria = knownCategory;
+      } else {
+        const mapping = categoryMappings[key];
+        if (mapping === KEEP_ORIGINAL_CATEGORY) {
+          warnings.push(`Categoria "${categoria}" mantida como texto original por decisão administrativa.`);
+        } else if (mapping) {
+          const mappedCategory = categoryByKey.get(normalizeHeader(mapping));
+          if (mappedCategory) {
+            categoria = mappedCategory;
+            warnings.push(`Categoria "${data.categoria}" será importada como "${mappedCategory}".`);
+          } else {
+            categoryPending = true;
+            warnings.push(`Mapeamento de categoria inválido para "${data.categoria}".`);
+          }
+        } else {
+          categoryPending = true;
+          warnings.push(`Categoria desconhecida: "${categoria}". Escolha uma categoria sugerida, existente ou mantenha o texto original explicitamente.`);
+        }
+      }
     }
 
     let exigeCapacitacao = false;
@@ -224,7 +285,7 @@ async function validateEquipmentCsv(csv, executor = pool, lockExisting = false) 
         patrimonio_ufpi: data.patrimonio_ufpi,
         codigo_patrimonio: data.patrimonio_ufpi,
         nome: data.nome,
-        categoria: data.categoria || null,
+        categoria,
         marca: data.marca || null,
         modelo: data.modelo || null,
         numero_serie: data.numero_serie || null,
@@ -235,37 +296,85 @@ async function validateEquipmentCsv(csv, executor = pool, lockExisting = false) 
         exige_capacitacao: exigeCapacitacao ? 1 : 0,
         observacoes: data.observacoes || null
       },
-      errors
+      errors,
+      warnings,
+      categoryPending,
+      sourceCategory: data.categoria || null
     };
   });
 
   const duplicates = rows.filter((row) => row.errors.some((error) => error.startsWith('Patrimônio duplicado'))).length;
   const missingSpaces = rows.filter((row) => row.errors.some((error) => error.startsWith('Laboratório inexistente'))).length;
   const invalid = rows.filter((row) => row.errors.length > 0).length;
+  const pendingCategories = [...new Set(rows
+    .filter((row) => row.categoryPending)
+    .map((row) => normalizeHeader(row.sourceCategory)))];
+  const categoryReview = pendingCategories.map((key) => ({
+    categoria: rows.find((row) => normalizeHeader(row.sourceCategory) === key)?.sourceCategory,
+    linhas: rows.filter((row) => normalizeHeader(row.sourceCategory) === key).map((row) => row.line)
+  }));
 
   return {
     rows,
     summary: {
       total: rows.length,
-      validos: rows.length - invalid,
+      validos: rows.length - invalid - rows.filter((row) => row.categoryPending).length,
       duplicados: duplicates,
       laboratorios_inexistentes: missingSpaces,
-      invalidos: invalid
+      invalidos: invalid,
+      categorias_pendentes: rows.filter((row) => row.categoryPending).length
     },
-    issues: rows.filter((row) => row.errors.length).map(({ line, errors }) => ({ line, errors }))
+    categoryCatalog,
+    categoryReview,
+    issues: rows.filter((row) => row.errors.length || row.warnings.length)
+      .map(({ line, errors, warnings }) => ({ line, errors, warnings }))
   };
+}
+
+function parseCategoryMappings(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key, mapping]) => typeof key === 'string' && typeof mapping === 'string')
+      .map(([key, mapping]) => [normalizeHeader(key), mapping.trim()])
+  );
+}
+
+function parseImportRequest(req) {
+  if (typeof req.body === 'string') {
+    const rawMappings = req.headers['x-labcontrol-category-mappings'];
+    let categoryMappings = {};
+    if (rawMappings) {
+      try {
+        categoryMappings = parseCategoryMappings(JSON.parse(rawMappings));
+      } catch {
+        throw new Error('O mapeamento de categorias enviado é inválido.');
+      }
+    }
+    return { csv: req.body, categoryMappings };
+  }
+  if (req.body && typeof req.body === 'object') {
+    return {
+      csv: req.body.csv,
+      categoryMappings: parseCategoryMappings(req.body.categoryMappings)
+    };
+  }
+  return { csv: null, categoryMappings: {} };
 }
 
 async function previewEquipmentImport(req, res) {
   try {
-    if (typeof req.body !== 'string' || !req.body.trim()) {
+    const { csv, categoryMappings } = parseImportRequest(req);
+    if (typeof csv !== 'string' || !csv.trim()) {
       return res.status(400).json({ error: 'Envie o conteúdo do arquivo CSV para validar.' });
     }
-    const preview = await validateEquipmentCsv(req.body);
+    const preview = await validateEquipmentCsv(csv, pool, false, { categoryMappings });
     res.json({
       summary: preview.summary,
       issues: preview.issues,
-      validRows: preview.rows.filter((row) => row.errors.length === 0).length
+      validRows: preview.rows.filter((row) => row.errors.length === 0 && !row.categoryPending).length,
+      categoryCatalog: preview.categoryCatalog,
+      categoryReview: preview.categoryReview
     });
   } catch (err) {
     console.error('[Integração] Erro ao validar CSV de equipamentos:', err);
@@ -278,25 +387,30 @@ async function importEquipmentCsv(req, res) {
   let transactionStarted = false;
 
   try {
-    if (typeof req.body !== 'string' || !req.body.trim()) {
+    const { csv, categoryMappings } = parseImportRequest(req);
+    if (typeof csv !== 'string' || !csv.trim()) {
       return res.status(400).json({ error: 'Envie o conteúdo do arquivo CSV para importar.' });
     }
     try {
-      parseCsv(req.body);
+      parseCsv(csv);
     } catch (err) {
       return res.status(400).json({ error: err.message });
     }
     connection = await pool.getConnection();
     await connection.beginTransaction();
     transactionStarted = true;
-    const validation = await validateEquipmentCsv(req.body, connection, true);
-    if (validation.summary.invalidos > 0) {
+    const validation = await validateEquipmentCsv(csv, connection, true, { categoryMappings });
+    if (validation.summary.invalidos > 0 || validation.summary.categorias_pendentes > 0) {
       await connection.rollback();
       transactionStarted = false;
       return res.status(409).json({
-        error: 'A importação foi cancelada: corrija todas as linhas inválidas antes de inserir.',
+        error: validation.summary.categorias_pendentes > 0
+          ? 'A importação foi cancelada: revise ou mapeie todas as categorias desconhecidas na prévia.'
+          : 'A importação foi cancelada: corrija todas as linhas inválidas antes de inserir.',
         summary: validation.summary,
-        issues: validation.issues
+        issues: validation.issues,
+        categoryCatalog: validation.categoryCatalog,
+        categoryReview: validation.categoryReview
       });
     }
 
@@ -353,5 +467,8 @@ async function exportCsv(req, res) {
 module.exports = {
   previewEquipmentImport,
   importEquipmentCsv,
-  exportCsv
+  exportCsv,
+  validateEquipmentCsv,
+  CATEGORY_SUGGESTIONS,
+  KEEP_ORIGINAL_CATEGORY
 };

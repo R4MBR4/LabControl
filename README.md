@@ -107,7 +107,7 @@ LabControl/
 7. **Importação e exportação CSV:**
    Administradores podem validar equipamentos em lote antes de inserir. A prévia informa linhas válidas, patrimônios duplicados, laboratórios inexistentes e outros erros; a importação é transacional e recusa o arquivo inteiro enquanto houver linhas inválidas. Os CSVs podem ser exportados para equipamentos, laboratórios, reservas, utilizações, ocorrências, manutenções, consumíveis e inventários (incluindo seus itens); fotos e evidências são omitidas.
 
-   Colunas obrigatórias para importar equipamentos: `patrimonio_ufpi`, `nome` e `laboratorio` (nome ou código do espaço). Categoria permanece texto livre, como no cadastro manual. Status aceitos: `disponivel`, `em_uso`, `manutencao` ou `inativo`. Arquivos CSV são limitados a 10 MB.
+   Colunas obrigatórias para importar equipamentos: `patrimonio_ufpi`, `nome` e `laboratorio` (nome ou código do espaço). O catálogo sugerido de categorias inclui “Outro” e as categorias já usadas no banco; valores desconhecidos são sinalizados na prévia e exigem mapeamento ou confirmação explícita para manter o texto original. Status aceitos: `disponivel`, `em_uso`, `manutencao` ou `inativo`. Arquivos CSV são limitados a 10 MB.
 
 8. **Experiência de uso:**
    A busca global na barra superior pesquisa equipamentos, espaços, reservas, ocorrências e consumíveis; administradores também pesquisam manutenções e inventários. Os resultados respeitam as permissões de cada perfil. Erros de carregamento nas principais listas exibem orientação e ação para tentar novamente; a lista de espaços combina busca textual com filtro por status.

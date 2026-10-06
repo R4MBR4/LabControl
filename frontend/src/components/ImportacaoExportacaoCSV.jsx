@@ -18,6 +18,7 @@ export default function ImportacaoExportacaoCSV({ onClose, onImported }) {
   const [file, setFile] = useState(null);
   const [csv, setCsv] = useState('');
   const [preview, setPreview] = useState(null);
+  const [categoryMappings, setCategoryMappings] = useState({});
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -25,6 +26,7 @@ export default function ImportacaoExportacaoCSV({ onClose, onImported }) {
   const handleFileChange = async (event) => {
     const selected = event.target.files?.[0];
     setPreview(null);
+    setCategoryMappings({});
     setError('');
     setNotice('');
     setFile(null);
@@ -50,14 +52,17 @@ export default function ImportacaoExportacaoCSV({ onClose, onImported }) {
     }
   };
 
-  const handlePreview = async () => {
+  const handlePreview = async (mappings = categoryMappings) => {
     if (!csv) return;
     setBusy('preview');
     setError('');
     setNotice('');
     try {
       const response = await api.post('/integracao/equipamentos/preview', csv, {
-        headers: { 'Content-Type': 'text/csv' },
+        headers: {
+          'Content-Type': 'text/csv',
+          'X-LabControl-Category-Mappings': JSON.stringify(mappings)
+        },
         timeout: 0
       });
       if (response.status >= 400) throw new Error(response.data?.error || 'A API recusou a validação do arquivo.');
@@ -68,7 +73,9 @@ export default function ImportacaoExportacaoCSV({ onClose, onImported }) {
       if (requestError.response?.data?.issues) {
         setPreview({
           summary: requestError.response.data.summary,
-          issues: requestError.response.data.issues
+          issues: requestError.response.data.issues,
+          categoryCatalog: requestError.response.data.categoryCatalog || [],
+          categoryReview: requestError.response.data.categoryReview || []
         });
       }
     } finally {
@@ -77,13 +84,17 @@ export default function ImportacaoExportacaoCSV({ onClose, onImported }) {
   };
 
   const handleImport = async () => {
-    if (!csv || !preview || preview.summary?.invalidos !== 0 || preview.summary?.total < 1) return;
+    if (!csv || !preview || preview.summary?.invalidos !== 0
+      || preview.summary?.categorias_pendentes > 0 || preview.summary?.total < 1) return;
     setBusy('import');
     setError('');
     setNotice('');
     try {
       const response = await api.post('/integracao/equipamentos/importar', csv, {
-        headers: { 'Content-Type': 'text/csv' },
+        headers: {
+          'Content-Type': 'text/csv',
+          'X-LabControl-Category-Mappings': JSON.stringify(categoryMappings)
+        },
         timeout: 0
       });
       if (response.status >= 400) throw new Error(response.data?.error || 'A API recusou a importação do arquivo.');
@@ -98,7 +109,9 @@ export default function ImportacaoExportacaoCSV({ onClose, onImported }) {
       if (requestError.response?.data?.summary) {
         setPreview({
           summary: requestError.response.data.summary,
-          issues: requestError.response.data.issues || []
+          issues: requestError.response.data.issues || [],
+          categoryCatalog: requestError.response.data.categoryCatalog || [],
+          categoryReview: requestError.response.data.categoryReview || []
         });
       }
     } finally {
@@ -133,7 +146,9 @@ export default function ImportacaoExportacaoCSV({ onClose, onImported }) {
     }
   };
 
-  const canImport = preview?.summary?.total > 0 && preview?.summary?.invalidos === 0;
+  const canImport = preview?.summary?.total > 0
+    && preview?.summary?.invalidos === 0
+    && preview?.summary?.categorias_pendentes === 0;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -203,6 +218,7 @@ export default function ImportacaoExportacaoCSV({ onClose, onImported }) {
                   ['Válidos', preview.summary.validos],
                   ['Duplicados', preview.summary.duplicados],
                   ['Laboratório inexistente', preview.summary.laboratorios_inexistentes],
+                  ['Categorias para revisar', preview.summary.categorias_pendentes || 0],
                   ['Com erros', preview.summary.invalidos]
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-md bg-white p-2">
@@ -211,12 +227,44 @@ export default function ImportacaoExportacaoCSV({ onClose, onImported }) {
                   </div>
                 ))}
               </div>
+              {preview.categoryReview?.length > 0 && (
+                <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-[11px] font-semibold text-amber-900">
+                    Categorias fora do catálogo precisam de uma decisão antes da importação.
+                  </p>
+                  {preview.categoryReview.map((category) => (
+                    <label key={category.categoria} className="grid grid-cols-1 items-center gap-2 text-[11px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                      <span className="text-amber-950">
+                        <strong>{category.categoria}</strong> · linha(s) {category.linhas.join(', ')}
+                      </span>
+                      <select
+                        value={categoryMappings[category.categoria] || ''}
+                        onChange={(event) => {
+                          const nextMappings = { ...categoryMappings, [category.categoria]: event.target.value };
+                          setCategoryMappings(nextMappings);
+                          handlePreview(nextMappings);
+                        }}
+                        disabled={Boolean(busy)}
+                        className="w-full rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-xs text-slate-800"
+                      >
+                        <option value="">Selecione uma categoria...</option>
+                        {preview.categoryCatalog?.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                        <option value="__manter_original__">Manter texto original: {category.categoria}</option>
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              )}
               {preview.issues?.length > 0 && (
                 <div className="max-h-40 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <p className="mb-2 text-[11px] font-semibold text-amber-900">Corrija os problemas indicados. Nenhuma linha será inserida enquanto houver erros.</p>
+                  <p className="mb-2 text-[11px] font-semibold text-amber-900">Revise os avisos e corrija os erros. Nenhuma linha será inserida enquanto houver pendências.</p>
                   <ul className="space-y-1 text-[11px] text-amber-900">
                     {preview.issues.map((issue) => (
-                      <li key={issue.line}>Linha {issue.line}: {issue.errors.join(' ')}</li>
+                      <li key={issue.line}>
+                        Linha {issue.line}: {[...(issue.errors || []), ...(issue.warnings || [])].join(' ')}
+                      </li>
                     ))}
                   </ul>
                 </div>

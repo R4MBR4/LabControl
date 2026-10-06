@@ -9,7 +9,8 @@
     "dev": "node --watch server.js",
     "test:inventario-divergencia": "node teste-inventario-divergencia.js",
     "test:no-show-automatic": "node teste-no-show-automatic.js",
-    "test:sugestoes-reserva": "node teste-sugestoes-reserva.js"
+    "test:sugestoes-reserva": "node teste-sugestoes-reserva.js",
+    "test:categorias-importacao": "node teste-categorias-importacao.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
