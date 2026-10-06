@@ -5,8 +5,8 @@ O **LabControl** é um sistema web full-stack desenvolvido para controle, agenda
 > ⚠️ **Importante sobre o Banco de Dados:**
 > Este sistema foi desenvolvido para **consumir o banco de dados MySQL existente** (`labcontrol`) via variáveis de ambiente.
 > Scripts SQL de schema e evolução estão em `database/`. Eles não são executados automaticamente pelo servidor. `database/schema.sql` recria as tabelas-base e contém comandos `DROP`; **não o execute sobre uma base com dados que devam ser preservados**.
-> Para uma base existente, aplique as migrações necessárias de forma controlada. A tolerância de no-show requer `database/migrations/07_configuracao_no_show.sql`; o vínculo entre ordens de manutenção e ocorrências requer `database/migrations/08_vinculo_ocorrencia_manutencao.sql`; a trilha de auditoria requer `database/migrations/09_historico_auditoria.sql`.
-> Tabelas consumidas: `usuario` · `espaco` · `equipamento` · `reserva` · `utilizacao` · `ocorrencia` · `manutencao` · `consumivel` · `capacitacao` · `inventario` · `inventario_item` · `configuracao_sistema` · `auditoria_evento`
+> Para uma base existente, aplique as migrações necessárias de forma controlada. A tolerância de no-show requer `database/migrations/07_configuracao_no_show.sql`; o vínculo entre ordens de manutenção e ocorrências requer `database/migrations/08_vinculo_ocorrencia_manutencao.sql`; a trilha de auditoria requer `database/migrations/09_historico_auditoria.sql`; as notificações internas requerem `database/migrations/10_notificacoes_internas.sql`.
+> Tabelas consumidas: `usuario` · `espaco` · `equipamento` · `reserva` · `utilizacao` · `ocorrencia` · `manutencao` · `consumivel` · `capacitacao` · `inventario` · `inventario_item` · `configuracao_sistema` · `auditoria_evento` · `notificacao`
 
 ---
 
@@ -115,6 +115,9 @@ LabControl/
 
 10. **Planta esquemática dos espaços:**
    Os detalhes de cada espaço exibem uma planta 2D somente para visualização, posicionando marcadores conforme a localização cadastrada e permitindo abrir o detalhe de cada equipamento. A planta vetorial de demonstração funciona sem imagem oficial e não permite arrastar ou editar posições. Dimensões, imagem substituta e coordenadas por localização ficam em `frontend/src/config/plantasEspacos.js`; localizações ainda não mapeadas usam posições de demonstração determinísticas.
+
+11. **Notificações internas:**
+   A barra superior mostra a caixa pessoal de notificações, a contagem de itens não lidos e oferece leitura individual ou em lote. Novas reservas e ocorrências avisam administradores; alterações administrativas de reservas e decisões sobre ocorrências avisam o solicitante. Aplicar `database/migrations/10_notificacoes_internas.sql` em bases existentes.
 
 ---
 

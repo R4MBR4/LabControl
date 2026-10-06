@@ -228,12 +228,69 @@ function saveStorage(data) {
   }
 }
 
+function addMockNotification(db, usuarioId, notification) {
+  db.notificacoes = db.notificacoes || [];
+  db.notificacoes.unshift({
+    id: Date.now() + Math.floor(Math.random() * 1000),
+    usuario_id: Number(usuarioId),
+    lida_em: null,
+    criada_em: new Date().toISOString(),
+    ...notification
+  });
+}
+
+function notifyMockRole(db, role, actorId, notification) {
+  (db.usuarios || [])
+    .filter((user) => String(user.perfil || '').toLowerCase() === role.toLowerCase())
+    .filter((user) => Number(user.id) !== Number(actorId))
+    .forEach((user) => addMockNotification(db, user.id, notification));
+}
+
 export function handleMockRequest(method, url, data, requestParams = {}) {
   const db = getStorage();
   const cleanUrl = url.split('?')[0];
+  const currentUser = JSON.parse(localStorage.getItem('labcontrol_user') || 'null');
 
   // Helper para responder simulando Axios
   const ok = (responseData) => ({ data: responseData, status: 200, statusText: 'OK' });
+
+  // Notificações internas associadas ao usuário autenticado.
+  if (cleanUrl === '/notificacoes' && method.toUpperCase() === 'GET') {
+    db.notificacoes = db.notificacoes || [];
+    const userNotifications = db.notificacoes
+      .filter((notification) => Number(notification.usuario_id) === Number(currentUser?.id))
+      .sort((a, b) => new Date(b.criada_em) - new Date(a.criada_em));
+    const limit = Math.max(1, Math.min(Number(requestParams.limit) || 50, 100));
+    return ok({
+      items: userNotifications.slice(0, limit),
+      unread: userNotifications.filter((notification) => !notification.lida_em).length
+    });
+  }
+
+  if (cleanUrl === '/notificacoes/lidas' && method.toUpperCase() === 'PATCH') {
+    db.notificacoes = db.notificacoes || [];
+    let total = 0;
+    db.notificacoes.forEach((notification) => {
+      if (Number(notification.usuario_id) === Number(currentUser?.id) && !notification.lida_em) {
+        notification.lida_em = new Date().toISOString();
+        total += 1;
+      }
+    });
+    saveStorage(db);
+    return ok({ message: 'Notificações marcadas como lidas.', total });
+  }
+
+  if (cleanUrl.match(/^\/notificacoes\/\d+\/lida$/) && method.toUpperCase() === 'PATCH') {
+    db.notificacoes = db.notificacoes || [];
+    const id = Number(cleanUrl.split('/')[2]);
+    const notification = db.notificacoes.find((item) => (
+      Number(item.id) === id && Number(item.usuario_id) === Number(currentUser?.id)
+    ));
+    if (!notification) return { data: { error: 'Notificação não encontrada.' }, status: 404, statusText: 'Not Found' };
+    notification.lida_em = notification.lida_em || new Date().toISOString();
+    saveStorage(db);
+    return ok({ message: 'Notificação marcada como lida.' });
+  }
 
   // 1. AUTENTICAÇÃO
   if (cleanUrl === '/auth/login') {
@@ -696,6 +753,14 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
         status: 'confirmada'
       };
       db.reservas.unshift(nova);
+      notifyMockRole(db, 'admin', u.id, {
+        tipo: 'reserva_criada',
+        titulo: 'Nova reserva registrada',
+        mensagem: `${u.nome} solicitou uma reserva${nova.finalidade ? `: ${nova.finalidade}` : '.'}`,
+        link: '/reservas',
+        entidade: 'reserva',
+        entidade_id: nova.id
+      });
       saveStorage(db);
       return ok(nova);
     }
@@ -837,6 +902,16 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
       }
       if (method.toUpperCase() === 'PUT' || method.toUpperCase() === 'PATCH') {
         db.reservas[idx] = { ...db.reservas[idx], ...(data || {}) };
+        if (data?.status && Number(db.reservas[idx].usuario_id) !== Number(currentUser?.id)) {
+          addMockNotification(db, db.reservas[idx].usuario_id, {
+            tipo: 'reserva_atualizada',
+            titulo: 'Atualização da reserva',
+            mensagem: `O status da sua reserva foi alterado para "${data.status}".`,
+            link: '/reservas',
+            entidade: 'reserva',
+            entidade_id: id
+          });
+        }
         saveStorage(db);
         return ok(db.reservas[idx]);
       }
@@ -955,6 +1030,14 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
         data_registro: new Date().toISOString()
       };
       db.ocorrencias.unshift(nova);
+      notifyMockRole(db, 'ADMIN', u.id, {
+        tipo: 'ocorrencia_registrada',
+        titulo: 'Nova ocorrência registrada',
+        mensagem: nova.titulo,
+        link: '/ocorrencias',
+        entidade: 'ocorrencia',
+        entidade_id: nova.id
+      });
       saveStorage(db);
       return ok(nova);
     }
@@ -965,6 +1048,16 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
     const idx = db.ocorrencias.findIndex(o => o.id === id);
     if (idx !== -1 && (method.toUpperCase() === 'PUT' || method.toUpperCase() === 'PATCH')) {
       db.ocorrencias[idx] = { ...db.ocorrencias[idx], ...data };
+      if (data?.status && Number(db.ocorrencias[idx].usuario_id) !== Number(currentUser?.id)) {
+        addMockNotification(db, db.ocorrencias[idx].usuario_id, {
+          tipo: 'ocorrencia_decidida',
+          titulo: 'Atualização da ocorrência',
+          mensagem: `Sua ocorrência "${db.ocorrencias[idx].titulo || 'Ocorrência'}" foi atualizada para "${data.status}".`,
+          link: '/ocorrencias',
+          entidade: 'ocorrencia',
+          entidade_id: id
+        });
+      }
       saveStorage(db);
       return ok(db.ocorrencias[idx]);
     }

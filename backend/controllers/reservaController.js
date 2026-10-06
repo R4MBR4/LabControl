@@ -2,6 +2,7 @@ const reservaModel = require('../models/reservaModel');
 const equipamentoModel = require('../models/equipamentoModel');
 const capacitacaoModel = require('../models/capacitacaoModel');
 const auditoriaModel = require('../models/auditoriaModel');
+const notificacaoModel = require('../models/notificacaoModel');
 const { pool } = require('../models/dbHelper');
 
 async function list(req, res) {
@@ -189,6 +190,14 @@ async function create(req, res) {
         status: nova.status
       }
     }, connection);
+    await notificacaoModel.createForRole('admin', {
+      tipo: 'reserva_criada',
+      titulo: 'Nova reserva registrada',
+      mensagem: `${req.user.nome || 'Um usuário'} solicitou uma reserva${finalidade ? `: ${finalidade}` : '.'}`,
+      link: '/reservas',
+      entidade: 'reserva',
+      entidade_id: nova.id || nova.id_reserva
+    }, connection, usuario_id);
     await connection.commit();
     transactionStarted = false;
     res.status(201).json(nova);
@@ -268,6 +277,18 @@ async function updateStatus(req, res) {
       usuario_id: req.user.id,
       detalhes: { status_anterior: anterior.status, status_novo: status }
     }, connection);
+    const solicitanteId = anterior.usuario_id || anterior.id_usuario;
+    if (solicitanteId && Number(solicitanteId) !== Number(req.user.id)) {
+      await notificacaoModel.createForUser({
+        usuario_id: solicitanteId,
+        tipo: 'reserva_atualizada',
+        titulo: 'Atualização da reserva',
+        mensagem: `O status da sua reserva foi alterado para "${status}".`,
+        link: '/reservas',
+        entidade: 'reserva',
+        entidade_id: req.params.id
+      }, connection);
+    }
     await connection.commit();
     transactionStarted = false;
     res.json(updated);

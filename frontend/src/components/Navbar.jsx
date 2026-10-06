@@ -22,6 +22,7 @@ import {
   Search
 } from 'lucide-react';
 import BuscaGlobal from './BuscaGlobal';
+import Notificacoes from './Notificacoes';
 
 export default function Navbar() {
   const { user, isAdmin, logout } = useAuth();
@@ -96,6 +97,8 @@ export default function Navbar() {
               })}
             </div>
           </div>
+
+          <Notificacoes />
 
           {/* Lado Direito Desktop: Perfil do Usuário e Botão Sair com Ícone (como antes) */}
           <div className="hidden lg:flex items-center gap-1.5 shrink-0 pl-2 border-l border-slate-200">

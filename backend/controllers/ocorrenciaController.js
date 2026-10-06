@@ -3,6 +3,7 @@ const equipamentoModel = require('../models/equipamentoModel');
 const manutencaoModel = require('../models/manutencaoModel');
 const { pool } = require('../models/dbHelper');
 const auditoriaModel = require('../models/auditoriaModel');
+const notificacaoModel = require('../models/notificacaoModel');
 
 async function list(req, res) {
   try {
@@ -76,6 +77,14 @@ async function create(req, res) {
       usuario_id,
       detalhes: { titulo, gravidade: payload.gravidade, status: payload.status }
     }, connection);
+    await notificacaoModel.createForRole('admin', {
+      tipo: 'ocorrencia_registrada',
+      titulo: 'Nova ocorrência registrada',
+      mensagem: `${titulo}${equipamento_id ? ` · equipamento #${equipamento_id}` : ''}`,
+      link: '/ocorrencias',
+      entidade: 'ocorrencia',
+      entidade_id: nova.id || nova.id_ocorrencia
+    }, connection, usuario_id);
     await connection.commit();
     transactionStarted = false;
     res.status(201).json(nova);
@@ -185,6 +194,18 @@ async function decidir(req, res) {
         manutencao_id: manutencao?.id || manutencao?.id_manutencao || null
       }
     }, connection);
+    const solicitanteId = ocorrencia.usuario_id || ocorrencia.id_usuario;
+    if (solicitanteId && Number(solicitanteId) !== Number(req.user.id)) {
+      await notificacaoModel.createForUser({
+        usuario_id: solicitanteId,
+        tipo: 'ocorrencia_decidida',
+        titulo: 'Atualização da ocorrência',
+        mensagem: `Sua ocorrência "${ocorrencia.titulo || 'Ocorrência'}" foi atualizada para "${statusAtualizado}".`,
+        link: '/ocorrencias',
+        entidade: 'ocorrencia',
+        entidade_id: req.params.id
+      }, connection);
+    }
 
     await connection.commit();
     transactionStarted = false;
