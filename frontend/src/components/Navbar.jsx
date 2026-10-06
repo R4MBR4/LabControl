@@ -56,9 +56,9 @@ export default function Navbar() {
   return (
     <nav className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-xs w-full">
       <div className="max-w-7xl mx-auto px-2 sm:px-4">
-        <div className="flex justify-between items-center h-14 sm:h-16 gap-1">
+        <div className="flex justify-between items-center h-14 sm:h-16 gap-1 min-w-0">
           {/* Lado Esquerdo: Logo + Links Compactos sem Vão */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-1">
             {/* Logo */}
             <Link to="/dashboard" className="flex items-center gap-1.5 shrink-0">
               <div className="w-8 h-8 rounded-lg bg-teal-600 flex items-center justify-center text-white shadow-xs shrink-0">
@@ -67,8 +67,13 @@ export default function Navbar() {
               <span className="font-bold text-sm sm:text-base text-slate-800 tracking-tight leading-none shrink-0">LabControl</span>
             </Link>
 
-            {/* Links Desktop (ultra-compactos, cabem com folga em qualquer tela) */}
-            <div className="hidden lg:flex items-center gap-0.5">
+            {/* Links Desktop: rolagem contida para manter os controles acessíveis */}
+            <div
+              className="hidden lg:flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overscroll-x-contain"
+              role="region"
+              aria-label="Opções principais do menu com rolagem horizontal"
+              tabIndex={0}
+            >
               {navLinks.map((link) => {
                 const Icon = link.icon;
                 const active = isActive(link.path);
@@ -76,7 +81,7 @@ export default function Navbar() {
                   <Link
                     key={link.path}
                     to={link.path}
-                    className={`flex items-center gap-1 px-1.5 xl:px-2 py-1 rounded-md text-[11px] xl:text-xs font-medium transition-colors whitespace-nowrap ${
+                    className={`flex shrink-0 items-center gap-1 px-1.5 xl:px-2 py-1 rounded-md text-[11px] xl:text-xs font-medium transition-colors whitespace-nowrap ${
                       active
                         ? 'bg-teal-50 text-teal-700 font-semibold'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -157,7 +162,7 @@ export default function Navbar() {
 
       {/* Menu Aberto no Celular (Gaveta Mobile Otimizada) */}
       {mobileMenuOpen && (
-        <div className="lg:hidden border-t border-slate-200 bg-white px-3 pt-3 pb-6 space-y-3 shadow-xl">
+        <div className="lg:hidden min-w-0 border-t border-slate-200 bg-white px-3 pt-3 pb-6 space-y-3 shadow-xl">
           {/* Card do Usuário Logado no Celular */}
           <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
