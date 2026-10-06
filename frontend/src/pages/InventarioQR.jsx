@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import QRScanner from '../components/QRScanner';
@@ -45,6 +46,7 @@ export default function InventarioQR() {
 
   // Modal / Decisão de Divergência
   const [divergenciaAtiva, setDivergenciaAtiva] = useState(null);
+  const [decisionSaving, setDecisionSaving] = useState(false);
 
   // Filtro de abas na sessão ativa
   const [tabFiltro, setTabFiltro] = useState('esperados'); // 'esperados', 'conferidos', 'divergencias', 'naolocalizados'
@@ -147,6 +149,8 @@ export default function InventarioQR() {
   };
 
   const handleDecidirDivergencia = async (itemId, acao) => {
+    setError('');
+    setDecisionSaving(true);
     try {
       await api.post(`/inventarios/${activeSession.id}/decidir-divergencia`, {
         item_id: itemId,
@@ -164,7 +168,10 @@ export default function InventarioQR() {
       const resAtualizada = await api.get(`/inventarios/${activeSession.id}`);
       setActiveSession(resAtualizada.data);
     } catch (err) {
-      setError(err.response?.data?.error || 'Erro ao registrar decisão');
+      console.error('[Inventario] Erro ao registrar decisão da divergência:', err);
+      setError(err.response?.data?.error || 'Não foi possível registrar a decisão. A divergência permanece pendente.');
+    } finally {
+      setDecisionSaving(false);
     }
   };
 
@@ -628,6 +635,14 @@ export default function InventarioQR() {
                               <span className="text-[11px] text-slate-500">
                                 {it.codigo_patrimonio} {it.patrimonio_ufpi ? `| ${it.patrimonio_ufpi}` : ''}
                               </span>
+                              <Link
+                                to={`/equipamentos/${it.equipamento_id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-1 inline-flex text-[11px] font-semibold text-teal-700 hover:text-teal-900 hover:underline"
+                              >
+                                Ver detalhes do equipamento
+                              </Link>
                             </div>
                           </div>
                           <span className={`self-start sm:self-auto px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
@@ -654,14 +669,18 @@ export default function InventarioQR() {
                           <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
                             <span className="text-[11px] text-slate-600 mr-2">Decisão Administrativa:</span>
                             <button
+                              type="button"
+                              disabled={decisionSaving}
                               onClick={() => handleDecidirDivergencia(it.id, 'manter')}
-                              className="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition"
+                              className="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Manter no Local Original
                             </button>
                             <button
+                              type="button"
+                              disabled={decisionSaving}
                               onClick={() => handleDecidirDivergencia(it.id, 'transferir')}
-                              className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition shadow-xs"
+                              className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition shadow-xs disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Transferir para Este Laboratório
                             </button>
@@ -796,6 +815,14 @@ export default function InventarioQR() {
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
               <h4 className="font-bold text-slate-900 text-sm">{divergenciaAtiva.equipamento_nome}</h4>
               <p className="text-xs text-slate-600">Código: <strong>{divergenciaAtiva.codigo_patrimonio}</strong></p>
+              <Link
+                to={`/equipamentos/${divergenciaAtiva.equipamento_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex text-xs font-semibold text-teal-700 hover:text-teal-900 hover:underline"
+              >
+                Ver detalhes do equipamento
+              </Link>
 
               <div className="grid grid-cols-2 gap-3 pt-2 text-xs">
                 <div>
@@ -816,15 +843,17 @@ export default function InventarioQR() {
             <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2">
               <button
                 type="button"
+                disabled={decisionSaving}
                 onClick={() => handleDecidirDivergencia(divergenciaAtiva.id, 'manter')}
-                className="px-4 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold"
+                className="px-4 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Manter no Local Original
               </button>
               <button
                 type="button"
+                disabled={decisionSaving}
                 onClick={() => handleDecidirDivergencia(divergenciaAtiva.id, 'transferir')}
-                className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-md"
+                className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-md disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Transferir para Este Laboratório
               </button>

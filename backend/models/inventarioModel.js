@@ -4,6 +4,12 @@ const equipamentoModel = require('./equipamentoModel');
 const TABLE = 'inventario';
 const ITEM_TABLE = 'inventario_item';
 
+function inventarioError(message, statusCode = 409) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
 async function getAllInventarios() {
   const sql = `
     SELECT inv.*,
@@ -172,38 +178,77 @@ async function scanItem(inventarioId, scannedValue, usuarioId, executor = pool) 
 
 async function decidirDivergencia(inventarioId, itemId, acao, usuarioId, executor = pool) {
   const [items] = await executor.query(`
-    SELECT it.*, inv.espaco_id AS inventario_espaco_id
+    SELECT it.*, inv.espaco_id AS inventario_espaco_id, inv.status AS inventario_status,
+           e.espaco_id AS equipamento_espaco_id,
+           esp_anterior.nome AS espaco_anterior_nome,
+           esp_novo.nome AS espaco_novo_nome
     FROM \`${ITEM_TABLE}\` it
     JOIN \`${TABLE}\` inv ON it.inventario_id = inv.id
+    JOIN equipamento e ON e.id = it.equipamento_id
+    LEFT JOIN espaco esp_anterior ON esp_anterior.id = e.espaco_id
+    LEFT JOIN espaco esp_novo ON esp_novo.id = it.espaco_encontrado_id
     WHERE it.id = ? AND it.inventario_id = ?
+    FOR UPDATE
   `, [itemId, inventarioId]);
 
   const item = items[0];
-  if (!item) throw new Error('Item de divergência não encontrado.');
+  if (!item) throw inventarioError('Item de divergência não encontrado.', 404);
   if ((item.status_conferencia || '').toLowerCase() !== 'divergente') {
-    throw new Error('Este item não possui uma divergência de localização pendente.');
+    throw inventarioError('Este item não possui uma divergência de localização pendente.');
+  }
+  if ((item.inventario_status || '').toLowerCase() !== 'em_andamento') {
+    throw inventarioError('Não é possível decidir divergências em uma sessão finalizada.');
+  }
+  if ((item.decisao_admin || '').toLowerCase() !== 'pendente') {
+    throw inventarioError('Esta divergência já possui uma decisão administrativa.');
   }
   if (!['transferir', 'manter'].includes(acao)) {
-    throw new Error('A decisão deve ser transferir ou manter a localização original.');
+    throw inventarioError('A decisão deve ser transferir ou manter a localização original.', 400);
   }
 
   const decisao = acao === 'transferir' ? 'transferir_localizacao' : 'manter_localizacao_original';
+  const espacoAnteriorId = item.equipamento_espaco_id;
+  const espacoAnteriorNome = item.espaco_anterior_nome || item.espaco_esperado_nome || null;
+  const espacoNovoId = acao === 'transferir' ? item.espaco_encontrado_id : espacoAnteriorId;
+  const espacoNovoNome = acao === 'transferir'
+    ? item.espaco_novo_nome || null
+    : espacoAnteriorNome;
 
   if (acao === 'transferir') {
-    // Atualiza a localização física do equipamento no cadastro
-    await executor.query(`UPDATE equipamento SET espaco_id = ? WHERE id = ?`, [
-      item.espaco_encontrado_id,
-      item.equipamento_id
+    const [resultado] = await executor.query(`UPDATE equipamento SET espaco_id = ? WHERE id = ? AND espaco_id = ?`, [
+      espacoNovoId,
+      item.equipamento_id,
+      espacoAnteriorId
     ]);
+    if (resultado.affectedRows !== 1) {
+      throw inventarioError('A localização do equipamento foi alterada por outra operação. Recarregue o inventário e revise a divergência.');
+    }
   }
 
-  await executor.query(`
+  const [resultadoDecisao] = await executor.query(`
     UPDATE \`${ITEM_TABLE}\`
     SET decisao_admin = ?, decisao_usuario_id = ?, decisao_data = NOW()
-    WHERE id = ?
-  `, [decisao, usuarioId, itemId]);
+    WHERE id = ? AND decisao_admin = 'pendente'
+  `, [
+    decisao,
+    usuarioId,
+    itemId
+  ]);
+  if (resultadoDecisao.affectedRows !== 1) {
+    throw inventarioError('Esta divergência já foi decidida por outra operação.');
+  }
 
-  return getInventarioById(inventarioId, executor);
+  const inventario = await getInventarioById(inventarioId, executor);
+  inventario.alteracaoLocalizacao = {
+    equipamento_id: item.equipamento_id,
+    espaco_anterior_id: espacoAnteriorId,
+    espaco_anterior_nome: espacoAnteriorNome,
+    espaco_novo_id: espacoNovoId,
+    espaco_novo_nome: espacoNovoNome,
+    usuario_id: usuarioId,
+    decisao
+  };
+  return inventario;
 }
 
 async function finalizarInventario(inventarioId, executor = pool) {

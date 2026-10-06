@@ -222,6 +222,7 @@ function getStorage() {
     if (!Array.isArray(data.documentos_tecnicos)) {
       data.documentos_tecnicos = JSON.parse(JSON.stringify(initialData.documentos_tecnicos));
     }
+    if (!Array.isArray(data.auditoria_eventos)) data.auditoria_eventos = [];
     return data;
   } catch (e) {
     return initialData;
@@ -244,6 +245,19 @@ function addMockNotification(db, usuarioId, notification) {
     lida_em: null,
     criada_em: new Date().toISOString(),
     ...notification
+  });
+}
+
+function addMockAudit(db, event) {
+  db.auditoria_eventos = db.auditoria_eventos || [];
+  const storedUser = localStorage.getItem('labcontrol_user');
+  const user = storedUser ? JSON.parse(storedUser) : null;
+  db.auditoria_eventos.unshift({
+    id: Date.now() + Math.floor(Math.random() * 1000),
+    usuario_id: Number(user?.id) || null,
+    usuario_nome: user?.nome || '',
+    criado_em: new Date().toISOString(),
+    ...event
   });
 }
 
@@ -768,7 +782,7 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
       utilizacoes,
       ocorrencias,
       manutencoes,
-      auditoria: [],
+      auditoria: (db.auditoria_eventos || []).filter((event) => Number(event.equipamento_id) === id),
       documentos: (db.documentos_tecnicos || []).filter((item) => Number(item.equipamento_id) === id)
     });
   }
@@ -1363,26 +1377,79 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
 
   if (cleanUrl.match(/\/inventarios\/\d+\/decidir-divergencia/)) {
     const invId = Number(cleanUrl.split('/')[2]);
-    const item = (db.inventario_itens || []).find(it => it.id === Number(data.item_id));
-    if (item) {
-      if (data.acao === 'transferir') {
-        item.decisao_admin = 'transferir_localizacao';
-        const eq = db.equipamentos.find(e => e.id === item.equipamento_id);
-        if (eq) {
-          eq.espaco_id = item.espaco_encontrado_id;
-          const esp = db.espacos.find(s => s.id === eq.espaco_id);
-          if (esp) eq.espaco_nome = esp.nome;
-        }
-      } else {
-        item.decisao_admin = 'manter_localizacao_original';
-      }
-      const storedUser = localStorage.getItem('labcontrol_user');
-      const u = storedUser ? JSON.parse(storedUser) : db.usuarios[0];
-      item.decisao_usuario_nome = u.nome;
-      item.decisao_data = new Date().toISOString();
-      saveStorage(db);
+    const inv = (db.inventarios || []).find(item => Number(item.id) === invId);
+    const isAdmin = ['admin', 'administrador'].includes(String(currentUser?.perfil || '').toLowerCase());
+    if (!isAdmin) return { data: { error: 'Acesso permitido apenas para administradores.' }, status: 403, statusText: 'Forbidden' };
+    if (!inv) return { data: { error: 'Sessão de inventário não encontrada.' }, status: 404, statusText: 'Not Found' };
+    if (inv.status !== 'em_andamento') return { data: { error: 'Não é possível decidir divergências em uma sessão finalizada.' }, status: 400, statusText: 'Bad Request' };
+    if (!['transferir', 'manter'].includes(data?.acao)) return { data: { error: 'Ação de divergência inválida.' }, status: 400, statusText: 'Bad Request' };
+
+    const item = (db.inventario_itens || []).find(it => (
+      Number(it.id) === Number(data.item_id) && Number(it.inventario_id) === invId
+    ));
+    if (!item || item.status_conferencia !== 'divergente') {
+      return { data: { error: 'Item de divergência não encontrado.' }, status: 404, statusText: 'Not Found' };
     }
-    const inv = db.inventarios.find(i => i.id === invId);
+    if (item.decisao_admin !== 'pendente') {
+      return { data: { error: 'Esta divergência já possui uma decisão administrativa.' }, status: 409, statusText: 'Conflict' };
+    }
+
+    const equipamento = (db.equipamentos || []).find(eq => Number(eq.id) === Number(item.equipamento_id));
+    if (!equipamento) return { data: { error: 'Equipamento da divergência não encontrado.' }, status: 404, statusText: 'Not Found' };
+    const espacoAnteriorId = Number(equipamento.espaco_id);
+    const espacoAnterior = (db.espacos || []).find(space => Number(space.id) === espacoAnteriorId);
+    const espacoNovoId = data.acao === 'transferir' ? Number(item.espaco_encontrado_id) : espacoAnteriorId;
+    const espacoNovo = (db.espacos || []).find(space => Number(space.id) === espacoNovoId);
+    const decision = data.acao === 'transferir' ? 'transferir_localizacao' : 'manter_localizacao_original';
+    const decisionAt = new Date().toISOString();
+
+    if (data.acao === 'transferir') {
+      equipamento.espaco_id = espacoNovoId;
+      equipamento.espaco_nome = espacoNovo?.nome || equipamento.espaco_nome;
+      addMockAudit(db, {
+        equipamento_id: equipamento.id,
+        entidade: 'equipamento',
+        entidade_id: String(equipamento.id),
+        acao: 'equipamento_local_alterado',
+        detalhes: {
+          origem: 'inventario_divergencia',
+          inventario_id: invId,
+          item_inventario_id: item.id,
+          equipamento_id: equipamento.id,
+          espaco_anterior_id: espacoAnteriorId,
+          espaco_anterior_nome: espacoAnterior?.nome || null,
+          espaco_novo_id: espacoNovoId,
+          espaco_novo_nome: espacoNovo?.nome || null,
+          usuario_responsavel_id: Number(currentUser.id),
+          data_hora_alteracao: decisionAt
+        }
+      });
+    }
+
+    item.decisao_admin = decision;
+    item.decisao_usuario_id = Number(currentUser.id);
+    item.decisao_usuario_nome = currentUser.nome;
+    item.decisao_data = decisionAt;
+    addMockAudit(db, {
+      equipamento_id: equipamento.id,
+      entidade: 'inventario_item',
+      entidade_id: String(item.id),
+      acao: 'inventario_divergencia_decidida',
+      detalhes: {
+        inventario_id: invId,
+        decisao: data.acao,
+        equipamento_id: equipamento.id,
+        espaco_esperado_id: item.espaco_esperado_id,
+        espaco_encontrado_id: item.espaco_encontrado_id,
+        espaco_anterior_id: espacoAnteriorId,
+        espaco_anterior_nome: espacoAnterior?.nome || null,
+        espaco_novo_id: espacoNovoId,
+        espaco_novo_nome: espacoNovo?.nome || null,
+        usuario_responsavel_id: Number(currentUser.id),
+        data_hora_decisao: decisionAt
+      }
+    });
+    saveStorage(db);
     return ok({ message: 'Decisão registrada', inventario: inv });
   }
 

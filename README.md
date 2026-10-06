@@ -128,6 +128,9 @@ LabControl/
 14. **OCR de patrimônio pela câmera:**
    Durante uma sessão de inventário, o administrador pode capturar a etiqueta do equipamento pela câmera e reconhecer códigos UFPI, PAT ou LabControl. O OCR é executado no navegador e não envia a imagem ao backend. O primeiro uso requer conexão para carregar o mecanismo e os dados de reconhecimento; cada código reconhecido precisa ser revisado e confirmado no fluxo normal do inventário. A leitura não altera automaticamente patrimônio ou localização.
 
+15. **Decisões de divergência de inventário:**
+   Administradores podem abrir os detalhes do equipamento diretamente pela divergência. As decisões de transferir ou manter a localização ficam na auditoria com equipamento, espaços anterior/novo, responsável e data/hora; a transferência e seus eventos de auditoria são gravados na mesma transação. Não é necessária migration adicional: as colunas de decisão e a tabela `auditoria_evento` já existem.
+
 ---
 
 ## 🚀 Como Executar o Projeto

@@ -119,6 +119,8 @@ async function decidirDivergencia(req, res) {
     transactionStarted = true;
     const atualizado = await inventarioModel.decidirDivergencia(req.params.id, item_id, acao, usuario_id, connection);
     const item = atualizado.itens.find((registro) => String(registro.id) === String(item_id));
+    const alteracao = atualizado.alteracaoLocalizacao;
+    delete atualizado.alteracaoLocalizacao;
     await auditoriaModel.registrarEvento({
       equipamento_id: item?.equipamento_id,
       entidade: 'inventario_item',
@@ -128,10 +130,38 @@ async function decidirDivergencia(req, res) {
       detalhes: {
         inventario_id: req.params.id,
         decisao: acao,
+        equipamento_id: item?.equipamento_id,
         espaco_esperado_id: item?.espaco_esperado_id,
-        espaco_encontrado_id: item?.espaco_encontrado_id
+        espaco_encontrado_id: item?.espaco_encontrado_id,
+        espaco_anterior_id: alteracao?.espaco_anterior_id,
+        espaco_anterior_nome: alteracao?.espaco_anterior_nome,
+        espaco_novo_id: alteracao?.espaco_novo_id,
+        espaco_novo_nome: alteracao?.espaco_novo_nome,
+        usuario_responsavel_id: usuario_id,
+        data_hora_decisao: new Date().toISOString()
       }
     }, connection);
+    if (acao === 'transferir') {
+      await auditoriaModel.registrarEvento({
+        equipamento_id: item?.equipamento_id,
+        entidade: 'equipamento',
+        entidade_id: item?.equipamento_id,
+        acao: 'equipamento_local_alterado',
+        usuario_id,
+        detalhes: {
+          origem: 'inventario_divergencia',
+          inventario_id: req.params.id,
+          item_inventario_id: item_id,
+          equipamento_id: item?.equipamento_id,
+          espaco_anterior_id: alteracao.espaco_anterior_id,
+          espaco_anterior_nome: alteracao.espaco_anterior_nome,
+          espaco_novo_id: alteracao.espaco_novo_id,
+          espaco_novo_nome: alteracao.espaco_novo_nome,
+          usuario_responsavel_id: usuario_id,
+          data_hora_alteracao: new Date().toISOString()
+        }
+      }, connection);
+    }
     await connection.commit();
     transactionStarted = false;
     res.json({
@@ -143,7 +173,7 @@ async function decidirDivergencia(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Inventario] Erro ao decidir divergência:', err);
-    res.status(500).json({ error: 'Erro ao registrar decisão de divergência: ' + err.message });
+    res.status(err.statusCode || 500).json({ error: 'Erro ao registrar decisão de divergência: ' + err.message });
   } finally {
     if (connection) connection.release();
   }
