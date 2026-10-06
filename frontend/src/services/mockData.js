@@ -5,6 +5,7 @@ const initialData = {
   configuracoes: {
     tolerancia_no_show_min: 15
   },
+  consumivel_movimentacoes: [],
   usuarios: [
     { id: 1, nome: 'Administrador Demo', email: 'admin@labcontrol.com', perfil: 'ADMIN', matricula: 'ADM-001', status: 'ATIVO', departamento: 'Coordenação de Laboratórios' },
     { id: 2, nome: 'Prof. Carlos Santos', email: 'professor@labcontrol.com', perfil: 'PROFESSOR', matricula: 'DOC-102', status: 'ATIVO', departamento: 'Engenharia e Automação' },
@@ -223,6 +224,7 @@ function getStorage() {
       data.documentos_tecnicos = JSON.parse(JSON.stringify(initialData.documentos_tecnicos));
     }
     if (!Array.isArray(data.auditoria_eventos)) data.auditoria_eventos = [];
+    if (!Array.isArray(data.consumivel_movimentacoes)) data.consumivel_movimentacoes = [];
     return data;
   } catch (e) {
     return initialData;
@@ -1191,34 +1193,88 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
   if (cleanUrl === '/consumiveis') {
     if (method.toUpperCase() === 'POST') {
       const esp = db.espacos.find(s => s.id === Number(data.espaco_id));
+      const quantity = Number(data.quantidade ?? 0);
       const novo = {
         id: Date.now(),
         nome: data.nome,
         categoria: data.categoria || 'Geral',
         espaco_id: data.espaco_id,
         espaco_nome: esp ? esp.nome : '',
-        quantidade: Number(data.quantidade || 0),
+        quantidade: quantity,
         quantidade_minima: Number(data.quantidade_minima || 5),
         unidade: data.unidade || 'un',
         estoque_critico: Number(data.quantidade || 0) <= Number(data.quantidade_minima || 5)
       };
       db.consumiveis.push(novo);
+      if (quantity > 0) {
+        db.consumivel_movimentacoes.unshift({
+          id: Date.now() + Math.floor(Math.random() * 1000),
+          consumivel_id: novo.id,
+          consumivel_nome: novo.nome,
+          tipo: 'entrada',
+          quantidade_anterior: 0,
+          quantidade_movimentada: quantity,
+          quantidade_resultante: quantity,
+          usuario_id: Number(currentUser?.id) || null,
+          usuario_nome: currentUser?.nome || '',
+          observacao: 'Estoque inicial do cadastro',
+          criado_em: new Date().toISOString()
+        });
+      }
       saveStorage(db);
       return ok(novo);
     }
     return ok(db.consumiveis);
   }
+  if (cleanUrl.match(/\/consumiveis\/\d+\/historico/)) {
+    const id = Number(cleanUrl.split('/')[2]);
+    if (!db.consumiveis.some((item) => Number(item.id) === id)) {
+      return { data: { error: 'Consumível não encontrado.' }, status: 404, statusText: 'Not Found' };
+    }
+    const history = (db.consumivel_movimentacoes || [])
+      .filter((movement) => Number(movement.consumivel_id) === id)
+      .sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
+    return ok(history);
+  }
   if (cleanUrl.match(/\/consumiveis\/\d+\/movimentar/)) {
+    const isAdmin = ['admin', 'administrador'].includes(String(currentUser?.perfil || '').toLowerCase());
+    if (!isAdmin) return { data: { error: 'Acesso permitido apenas para administradores.' }, status: 403, statusText: 'Forbidden' };
     const id = Number(cleanUrl.split('/')[2]);
     const item = db.consumiveis.find(c => c.id === id);
     if (item) {
-      const qtd = Number(data.quantidade || 1);
-      if (data.tipo === 'ENTRADA') item.quantidade += qtd;
-      else if (data.tipo === 'SAIDA') item.quantidade = Math.max(0, item.quantidade - qtd);
+      const qtd = Number(data.quantidade);
+      const tipo = String(data.tipo || '').toLowerCase();
+      if (!['entrada', 'saida', 'consumo', 'reposicao'].includes(tipo)
+        || !Number.isFinite(qtd) || qtd <= 0 || Math.round(qtd * 100) !== qtd * 100
+        || typeof (data.observacao || '') !== 'string' || (data.observacao || '').length > 500) {
+        return { data: { error: 'Tipo, quantidade ou observação da movimentação inválidos.' }, status: 400, statusText: 'Bad Request' };
+      }
+      const isEntry = tipo === 'entrada' || tipo === 'reposicao';
+      const before = Number(item.quantidade);
+      const after = Number((before + (isEntry ? qtd : -qtd)).toFixed(2));
+      if (after < 0) {
+        return { data: { error: `Estoque insuficiente. Saldo atual: ${before}. O estoque não pode ficar negativo.` }, status: 400, statusText: 'Bad Request' };
+      }
+      item.quantidade = after;
       item.estoque_critico = item.quantidade <= item.quantidade_minima;
+      const movement = {
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        consumivel_id: item.id,
+        consumivel_nome: item.nome,
+        tipo,
+        quantidade_anterior: before,
+        quantidade_movimentada: qtd,
+        quantidade_resultante: after,
+        usuario_id: Number(currentUser?.id) || null,
+        usuario_nome: currentUser?.nome || '',
+        observacao: data.observacao || null,
+        criado_em: new Date().toISOString()
+      };
+      db.consumivel_movimentacoes.unshift(movement);
       saveStorage(db);
-      return ok(item);
+      return ok({ message: 'Estoque atualizado com sucesso', consumivel: item, movimentacao: movement });
     }
+    return { data: { error: 'Consumível não encontrado.' }, status: 404, statusText: 'Not Found' };
   }
 
   // 10. CAPACITAÇÕES

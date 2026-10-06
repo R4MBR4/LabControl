@@ -6,6 +6,7 @@ const { authenticateToken, authorizeAdmin } = require('../middlewares/auth');
 router.use(authenticateToken);
 
 router.get('/', consumivelController.list);
+router.get('/:id/historico', consumivelController.historico);
 router.get('/:id', consumivelController.getById);
 
 // Gestão de estoque restrita ao Administrador

@@ -5,15 +5,14 @@ import LoadError from '../components/LoadError';
 import {
   Boxes,
   Plus,
-  ArrowDownRight,
-  ArrowUpRight,
   AlertTriangle,
   CheckCircle2,
   AlertCircle,
   Search,
   Tag,
   X,
-  Layers
+  Layers,
+  History
 } from 'lucide-react';
 
 export default function Consumiveis() {
@@ -25,20 +24,25 @@ export default function Consumiveis() {
 
   const [modalNewOpen, setModalNewOpen] = useState(false);
   const [modalMovOpen, setModalMovOpen] = useState(false);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
+  const [movementHistory, setMovementHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
 
   const [newForm, setNewForm] = useState({
     nome: '',
     categoria: 'Impressão 3D',
     quantidade: 10,
     quantidade_minima: 5,
-    unidade_medida: 'un',
+    unidade: 'un',
     localizacao: ''
   });
 
   const [movForm, setMovForm] = useState({
-    tipo: 'saida', // 'entrada' ou 'saida'
-    quantidade: 1
+    tipo: 'consumo',
+    quantidade: 1,
+    observacao: ''
   });
 
   const [error, setError] = useState('');
@@ -68,7 +72,7 @@ export default function Consumiveis() {
       categoria: 'Impressão 3D',
       quantidade: 10,
       quantidade_minima: 5,
-      unidade_medida: 'un',
+      unidade: 'un',
       localizacao: ''
     });
     setError('');
@@ -92,8 +96,9 @@ export default function Consumiveis() {
   const handleOpenMov = (item) => {
     setSelectedItem(item);
     setMovForm({
-      tipo: 'saida',
-      quantidade: 1
+      tipo: 'consumo',
+      quantidade: 1,
+      observacao: ''
     });
     setError('');
     setModalMovOpen(true);
@@ -107,20 +112,42 @@ export default function Consumiveis() {
     const saldoAtual = Number(selectedItem.quantidade || selectedItem.qtd || 0);
     const qtdMov = Number(movForm.quantidade);
 
-    if (movForm.tipo === 'saida' && qtdMov > saldoAtual) {
-      setError(`Estoque insuficiente! Saldo atual é ${saldoAtual} ${selectedItem.unidade_medida || 'un'}. O estoque não pode ficar negativo.`);
+    if (['saida', 'consumo'].includes(movForm.tipo) && qtdMov > saldoAtual) {
+      setError(`Estoque insuficiente! Saldo atual é ${saldoAtual} ${selectedItem.unidade_medida || selectedItem.unidade || 'un'}. O estoque não pode ficar negativo.`);
       return;
     }
 
     try {
       const id = selectedItem.id || selectedItem.id_consumivel;
-      await api.post(`/consumiveis/${id}/movimentar`, movForm);
+      await api.post(`/consumiveis/${id}/movimentar`, {
+        tipo: movForm.tipo,
+        quantidade: qtdMov,
+        observacao: movForm.observacao
+      });
       setSuccess(`Movimentação de estoque (${movForm.tipo.toUpperCase()}) concluída com sucesso!`);
       setModalMovOpen(false);
       loadData();
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao movimentar estoque');
+    }
+  };
+
+  const handleOpenHistory = async (item) => {
+    setSelectedItem(item);
+    setMovementHistory([]);
+    setHistoryError('');
+    setHistoryLoading(true);
+    setHistoryModalOpen(true);
+    const id = item.id || item.id_consumivel;
+    try {
+      const response = await api.get(`/consumiveis/${id}/historico`);
+      setMovementHistory(response.data);
+    } catch (err) {
+      console.error('[Consumiveis] Erro ao carregar histórico:', err);
+      setHistoryError(err.response?.data?.error || 'Não foi possível carregar o histórico.');
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -225,14 +252,14 @@ export default function Consumiveis() {
                     <div>
                       <span className="text-[10px] uppercase font-semibold text-slate-400">Saldo Atual</span>
                       <p className={`text-xl font-extrabold ${isCritico ? 'text-amber-700' : 'text-slate-800'}`}>
-                        {qtd} <span className="text-xs font-normal text-slate-500">{item.unidade_medida || 'un'}</span>
+                        {qtd} <span className="text-xs font-normal text-slate-500">{item.unidade_medida || item.unidade || 'un'}</span>
                       </p>
                     </div>
                     <div className="h-8 w-px bg-slate-200"></div>
                     <div>
                       <span className="text-[10px] uppercase font-semibold text-slate-400">Estoque Mínimo</span>
                       <p className="text-xl font-bold text-slate-600">
-                        {qtdMin} <span className="text-xs font-normal text-slate-400">{item.unidade_medida || 'un'}</span>
+                        {qtdMin} <span className="text-xs font-normal text-slate-400">{item.unidade_medida || item.unidade || 'un'}</span>
                       </p>
                     </div>
                   </div>
@@ -244,8 +271,16 @@ export default function Consumiveis() {
                   )}
                 </div>
 
-                {isAdmin && (
-                  <div className="mt-2 pt-3 border-t border-slate-100 flex justify-end">
+                <div className="mt-2 pt-3 border-t border-slate-100 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenHistory(item)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-semibold transition"
+                  >
+                    <History className="w-3.5 h-3.5" />
+                    Histórico
+                  </button>
+                  {isAdmin && (
                     <button
                       onClick={() => handleOpenMov(item)}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold shadow-xs transition"
@@ -253,8 +288,8 @@ export default function Consumiveis() {
                       <Layers className="w-3.5 h-3.5" />
                       Movimentar Estoque
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             );
           })}
@@ -305,8 +340,8 @@ export default function Consumiveis() {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Unidade de Medida</label>
                   <input
                     type="text"
-                    value={newForm.unidade_medida}
-                    onChange={(e) => setNewForm({ ...newForm, unidade_medida: e.target.value })}
+                    value={newForm.unidade}
+                    onChange={(e) => setNewForm({ ...newForm, unidade: e.target.value })}
                     placeholder="un, kg, m, rolo..."
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                   />
@@ -389,49 +424,46 @@ export default function Consumiveis() {
 
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 mb-4 text-xs">
               <p className="font-bold text-slate-800">{selectedItem.nome}</p>
-              <p className="text-slate-500">Saldo disponível em estoque: <strong>{selectedItem.quantidade} {selectedItem.unidade_medida || 'un'}</strong></p>
+              <p className="text-slate-500">Saldo disponível em estoque: <strong>{selectedItem.quantidade} {selectedItem.unidade_medida || selectedItem.unidade || 'un'}</strong></p>
             </div>
 
             <form onSubmit={handleMovSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Tipo de Movimentação</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setMovForm({ ...movForm, tipo: 'saida' })}
-                    className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border transition ${
-                      movForm.tipo === 'saida'
-                        ? 'bg-rose-50 border-rose-500 text-rose-700'
-                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <ArrowDownRight className="w-4 h-4 text-rose-600" />
-                    Saída (Consumo)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMovForm({ ...movForm, tipo: 'entrada' })}
-                    className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border transition ${
-                      movForm.tipo === 'entrada'
-                        ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
-                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <ArrowUpRight className="w-4 h-4 text-emerald-600" />
-                    Entrada (Reposição)
-                  </button>
-                </div>
+                <select
+                  value={movForm.tipo}
+                  onChange={(e) => setMovForm({ ...movForm, tipo: e.target.value })}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white"
+                >
+                  <option value="entrada">Entrada</option>
+                  <option value="saida">Saída</option>
+                  <option value="consumo">Consumo</option>
+                  <option value="reposicao">Reposição</option>
+                </select>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Quantidade a Movimentar</label>
                 <input
                   type="number"
-                  min="1"
+                  min="0.01"
+                  step="0.01"
                   required
                   value={movForm.quantidade}
                   onChange={(e) => setMovForm({ ...movForm, quantidade: Number(e.target.value) })}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Motivo / Observação (opcional)</label>
+                <textarea
+                  rows="2"
+                  maxLength="500"
+                  value={movForm.observacao}
+                  onChange={(e) => setMovForm({ ...movForm, observacao: e.target.value })}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200"
+                  placeholder="Ex.: consumo em aula prática ou reposição do almoxarifado"
                 />
               </div>
 
@@ -451,6 +483,47 @@ export default function Consumiveis() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {historyModalOpen && selectedItem && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <div>
+                <h3 className="font-bold text-slate-800 text-base">Histórico de Movimentações</h3>
+                <p className="text-xs text-slate-500">{selectedItem.nome}</p>
+              </div>
+              <button onClick={() => setHistoryModalOpen(false)} className="text-slate-400 hover:text-slate-600" aria-label="Fechar histórico">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {historyError && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-xs text-rose-700">{historyError}</p>}
+            {historyLoading ? (
+              <div className="py-8 text-center text-xs text-slate-500">Carregando histórico...</div>
+            ) : historyError ? null : movementHistory.length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-500">Ainda não há movimentações registradas.</div>
+            ) : (
+              <div className="space-y-2">
+                {movementHistory.map((entry) => (
+                  <article key={entry.id} className="rounded-xl border border-slate-200 p-3 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <strong className="capitalize text-slate-800">{entry.tipo}</strong>
+                      <time className="text-[11px] text-slate-500">
+                        {entry.criado_em ? new Date(entry.criado_em).toLocaleString('pt-BR') : 'Data não informada'}
+                      </time>
+                    </div>
+                    <p className="mt-1 text-slate-600">
+                      Saldo: {entry.quantidade_anterior} → {entry.quantidade_resultante} {selectedItem.unidade_medida || selectedItem.unidade || 'un'}
+                      {' '}· movimentado: {entry.quantidade_movimentada}
+                    </p>
+                    <p className="mt-1 text-slate-500">Responsável: {entry.usuario_nome || 'Usuário removido/não informado'}</p>
+                    {entry.observacao && <p className="mt-1 text-slate-500">Motivo: {entry.observacao}</p>}
+                  </article>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

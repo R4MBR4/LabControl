@@ -10,7 +10,8 @@
     "test:inventario-divergencia": "node teste-inventario-divergencia.js",
     "test:no-show-automatic": "node teste-no-show-automatic.js",
     "test:sugestoes-reserva": "node teste-sugestoes-reserva.js",
-    "test:categorias-importacao": "node teste-categorias-importacao.js"
+    "test:categorias-importacao": "node teste-categorias-importacao.js",
+    "test:historico-consumiveis": "node teste-historico-consumiveis.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

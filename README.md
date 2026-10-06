@@ -5,7 +5,7 @@ O **LabControl** é um sistema web full-stack desenvolvido para controle, agenda
 > ⚠️ **Importante sobre o Banco de Dados:**
 > Este sistema foi desenvolvido para **consumir o banco de dados MySQL existente** (`labcontrol`) via variáveis de ambiente.
 > Scripts SQL de schema e evolução estão em `database/`. Eles não são executados automaticamente pelo servidor. `database/schema.sql` recria as tabelas-base e contém comandos `DROP`; **não o execute sobre uma base com dados que devam ser preservados**.
-> Para uma base existente, aplique as migrações necessárias de forma controlada. A tolerância de no-show requer `database/migrations/07_configuracao_no_show.sql`; o vínculo entre ordens de manutenção e ocorrências requer `database/migrations/08_vinculo_ocorrencia_manutencao.sql`; a trilha de auditoria requer `database/migrations/09_historico_auditoria.sql`; as notificações internas requerem `database/migrations/10_notificacoes_internas.sql`; os documentos técnicos requerem `database/migrations/11_documentos_tecnicos.sql`.
+> Para uma base existente, aplique as migrações necessárias de forma controlada. A tolerância de no-show requer `database/migrations/07_configuracao_no_show.sql`; o vínculo entre ordens de manutenção e ocorrências requer `database/migrations/08_vinculo_ocorrencia_manutencao.sql`; a trilha de auditoria requer `database/migrations/09_historico_auditoria.sql`; as notificações internas requerem `database/migrations/10_notificacoes_internas.sql`; os documentos técnicos requerem `database/migrations/11_documentos_tecnicos.sql`; o histórico de consumíveis requer `database/migrations/12_historico_consumiveis.sql`.
 > Tabelas consumidas: `usuario` · `espaco` · `equipamento` · `equipamento_documento` · `reserva` · `utilizacao` · `ocorrencia` · `manutencao` · `consumivel` · `capacitacao` · `inventario` · `inventario_item` · `configuracao_sistema` · `auditoria_evento` · `notificacao`
 
 ---
@@ -99,7 +99,7 @@ LabControl/
    A finalização do check-out exige formalmente o relato do estado de conservação do equipamento devolvido. Se for relatada avaria, a evidência é obrigatória e o check-out, a ocorrência e o bloqueio do equipamento são persistidos na mesma transação.
 
 5. **Estoque de Consumíveis Não-Negativo:**
-   Validação atômica impede que saídas de estoque tornem o saldo negativo. Alertas visuais são emitidos sempre que `quantidade <= quantidade_minima`.
+   Validação transacional e bloqueio do registro impedem saldo negativo ou perda de movimentos concorrentes. Entradas, saídas, consumo, reposição e saldo inicial ficam no histórico com quantidade anterior/movimentada/resultante, usuário, data/hora e observação opcional. A migration 12 cria o histórico e registra o saldo de abertura dos itens existentes.
 
 6. **Ciclo Completo de Manutenção:**
    O encaminhamento administrativo cria uma ordem de serviço vinculada à ocorrência. A conclusão exige laudo técnico; o equipamento só retorna a `disponivel` quando não há outra manutenção aberta nem inativação ativa. Ocorrências e ordens não podem ser excluídas pela API.
