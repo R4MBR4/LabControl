@@ -6,6 +6,7 @@ const { authenticateToken, authorizeAdmin } = require('../middlewares/auth');
 router.use(authenticateToken);
 
 router.get('/', reservaController.list);
+router.get('/calendario', reservaController.getCalendario);
 router.get('/:id', reservaController.getById);
 router.post('/', reservaController.create);
 router.put('/:id/cancelar', reservaController.cancel);

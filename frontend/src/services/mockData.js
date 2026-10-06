@@ -499,6 +499,19 @@ export function handleMockRequest(method, url, data) {
     return ok(db.reservas);
   }
 
+  if (cleanUrl === '/reservas/calendario') {
+    return ok(db.reservas.map(r => ({
+      id: r.id,
+      data_inicio: r.data_inicio,
+      data_fim: r.data_fim,
+      finalidade: r.finalidade,
+      status: r.status,
+      usuario_nome: r.usuario_nome,
+      equipamento_nome: r.equipamento_nome,
+      espaco_nome: r.espaco_nome
+    })));
+  }
+
   // Cancelar reserva explicitamente: /reservas/:id/cancelar
   if (cleanUrl.match(/\/reservas\/\d+\/cancelar/)) {
     const id = Number(cleanUrl.split('/')[2]);

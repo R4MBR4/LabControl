@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import {
   CalendarCheck,
+  Calendar as CalendarIcon,
+  CalendarDays,
   Plus,
   Search,
   Filter,
@@ -13,7 +15,13 @@ import {
   Building2,
   Cpu,
   User,
-  X
+  X,
+  ChevronLeft,
+  ChevronRight,
+  List,
+  Eye,
+  RotateCcw,
+  Info
 } from 'lucide-react';
 
 export default function Reservas() {
@@ -23,8 +31,27 @@ export default function Reservas() {
   const [equipamentos, setEquipamentos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState(null);
-  const [filtroStatus, setFiltroStatus] = useState('todas'); // 'todas', 'ativas'
+
+  // Modo de visualização: 'tabela' ou 'calendario'
+  const [viewMode, setViewMode] = useState('tabela');
+  // Submodo do calendário: 'mes', 'semana', 'dia'
+  const [calendarMode, setCalendarMode] = useState('mes');
+  const [currentDate, setCurrentDate] = useState(new Date());
+
+  // Filtros Avançados
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filtroTipoRecurso, setFiltroTipoRecurso] = useState('todos'); // 'todos', 'equipamento', 'espaco'
+  const [filtroEspacoId, setFiltroEspacoId] = useState('');
+  const [filtroEquipamentoId, setFiltroEquipamentoId] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState('todas'); // 'todas', 'confirmada', 'em_andamento', 'cancelada'
+  const [filtroDataInicio, setFiltroDataInicio] = useState('');
+  const [filtroDataFim, setFiltroDataFim] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
+  // Modais
   const [modalOpen, setModalOpen] = useState(false);
+  const [detalheModalOpen, setDetalheModalOpen] = useState(false);
+  const [reservaSelecionada, setReservaSelecionada] = useState(null);
   const [tipoRecurso, setTipoRecurso] = useState('equipamento'); // 'equipamento' ou 'espaco'
 
   const [formData, setFormData] = useState({
@@ -42,16 +69,25 @@ export default function Reservas() {
   const loadData = async () => {
     try {
       setLoading(true);
+      const params = {};
+      if (filtroStatus !== 'todas') params.status = filtroStatus;
+      if (filtroTipoRecurso !== 'todos') params.tipo_recurso = filtroTipoRecurso;
+      if (filtroEspacoId) params.espaco_id = filtroEspacoId;
+      if (filtroEquipamentoId) params.equipamento_id = filtroEquipamentoId;
+      if (filtroDataInicio) params.data_inicio_de = filtroDataInicio;
+      if (filtroDataFim) params.data_fim_ate = filtroDataFim;
+      if (searchTerm) params.search = searchTerm;
+
       const [resReservas, resEsp, resEquip] = await Promise.all([
-        api.get('/reservas'),
+        api.get('/reservas', { params }),
         api.get('/espacos'),
         api.get('/equipamentos')
       ]);
-      setReservas(resReservas.data);
-      setEspacos(resEsp.data);
-      setEquipamentos(resEquip.data);
+      setReservas(resReservas.data || []);
+      setEspacos(resEsp.data || []);
+      setEquipamentos(resEquip.data || []);
     } catch (err) {
-      console.error('[Reservas] Erro:', err);
+      console.error('[Reservas] Erro ao carregar dados:', err);
     } finally {
       setLoading(false);
     }
@@ -59,13 +95,39 @@ export default function Reservas() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [filtroStatus, filtroTipoRecurso, filtroEspacoId, filtroEquipamentoId, filtroDataInicio, filtroDataFim]);
 
-  const handleOpenModal = () => {
-    // Define horário inicial sugerido (próxima hora cheia)
-    const now = new Date();
-    now.setMinutes(0, 0, 0);
-    now.setHours(now.getHours() + 1);
+  const handleSearchSubmit = (e) => {
+    if (e) e.preventDefault();
+    loadData();
+  };
+
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setFiltroTipoRecurso('todos');
+    setFiltroEspacoId('');
+    setFiltroEquipamentoId('');
+    setFiltroStatus('todas');
+    setFiltroDataInicio('');
+    setFiltroDataFim('');
+  };
+
+  const activeFiltersCount = [
+    searchTerm,
+    filtroTipoRecurso !== 'todos' ? filtroTipoRecurso : '',
+    filtroEspacoId,
+    filtroEquipamentoId,
+    filtroStatus !== 'todas' ? filtroStatus : '',
+    filtroDataInicio,
+    filtroDataFim
+  ].filter(Boolean).length;
+
+  const handleOpenModal = (prefilledDate = null) => {
+    const now = prefilledDate ? new Date(prefilledDate) : new Date();
+    if (!prefilledDate) {
+      now.setMinutes(0, 0, 0);
+      now.setHours(now.getHours() + 1);
+    }
     const startStr = now.toISOString().slice(0, 16);
 
     const end = new Date(now);
@@ -95,7 +157,7 @@ export default function Reservas() {
         finalidade: formData.finalidade,
         observacoes: formData.observacoes,
         equipamento_id: tipoRecurso === 'equipamento' ? formData.equipamento_id : null,
-        espaco_id: tipoRecurso === 'espaco' ? formData.espaco_id : null,
+        espaco_id: tipoRecurso === 'espaco' ? formData.espaco_id : null
       };
 
       await api.post('/reservas', payload);
@@ -115,6 +177,9 @@ export default function Reservas() {
       setError('');
       await api.put(`/reservas/${id}/cancelar`);
       setSuccess('Reserva cancelada com sucesso!');
+      if (reservaSelecionada && (reservaSelecionada.id === id || reservaSelecionada.id_reserva === id)) {
+        setDetalheModalOpen(false);
+      }
       await loadData();
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
@@ -124,53 +189,167 @@ export default function Reservas() {
     }
   };
 
+  // Filtragem local rápida para o termo de busca caso não aperte enter
+  const filteredReservas = useMemo(() => {
+    if (!searchTerm.trim()) return reservas;
+    const term = searchTerm.toLowerCase();
+    return reservas.filter(r =>
+      r.finalidade?.toLowerCase().includes(term) ||
+      r.observacoes?.toLowerCase().includes(term) ||
+      r.usuario_nome?.toLowerCase().includes(term) ||
+      r.usuario_email?.toLowerCase().includes(term) ||
+      r.equipamento_nome?.toLowerCase().includes(term) ||
+      r.equipamento_codigo?.toLowerCase().includes(term) ||
+      r.espaco_nome?.toLowerCase().includes(term)
+    );
+  }, [reservas, searchTerm]);
+
+  // Controles de Navegação de Datas no Calendário
+  const handlePrevDate = () => {
+    const next = new Date(currentDate);
+    if (calendarMode === 'mes') next.setMonth(next.getMonth() - 1);
+    else if (calendarMode === 'semana') next.setDate(next.getDate() - 7);
+    else if (calendarMode === 'dia') next.setDate(next.getDate() - 1);
+    setCurrentDate(next);
+  };
+
+  const handleNextDate = () => {
+    const next = new Date(currentDate);
+    if (calendarMode === 'mes') next.setMonth(next.getMonth() + 1);
+    else if (calendarMode === 'semana') next.setDate(next.getDate() + 7);
+    else if (calendarMode === 'dia') next.setDate(next.getDate() + 1);
+    setCurrentDate(next);
+  };
+
+  const handleToday = () => {
+    setCurrentDate(new Date());
+  };
+
+  const currentMonthName = currentDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+
+  // Calendário - Renderização do Mês
+  const calendarDays = useMemo(() => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+
+    const firstDayIndex = new Date(year, month, 1).getDay(); // 0: domingo
+    const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
+    const prevMonthDays = new Date(year, month, 0).getDate();
+
+    const days = [];
+
+    // Dias do mês anterior para preencher a primeira semana
+    for (let i = firstDayIndex - 1; i >= 0; i--) {
+      const d = new Date(year, month - 1, prevMonthDays - i);
+      days.push({ date: d, isCurrentMonth: false });
+    }
+
+    // Dias do mês atual
+    for (let i = 1; i <= totalDaysInMonth; i++) {
+      const d = new Date(year, month, i);
+      days.push({ date: d, isCurrentMonth: true });
+    }
+
+    // Dias do próximo mês para completar 35 ou 42 células
+    const remaining = (7 - (days.length % 7)) % 7;
+    for (let i = 1; i <= remaining; i++) {
+      const d = new Date(year, month + 1, i);
+      days.push({ date: d, isCurrentMonth: false });
+    }
+
+    return days;
+  }, [currentDate]);
+
+  // Mapeamento de reservas por data (YYYY-MM-DD)
+  const reservasPorData = useMemo(() => {
+    const map = {};
+    filteredReservas.forEach(r => {
+      if (!r.data_inicio) return;
+      const key = new Date(r.data_inicio).toISOString().slice(0, 10);
+      if (!map[key]) map[key] = [];
+      map[key].push(r);
+    });
+    return map;
+  }, [filteredReservas]);
+
+  // Semana atual (7 dias)
+  const weekDays = useMemo(() => {
+    const curr = new Date(currentDate);
+    const day = curr.getDay();
+    const diff = curr.getDate() - day; // domingo como início
+
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(curr.setDate(diff + i));
+      days.push(d);
+    }
+    return days;
+  }, [currentDate]);
+
+  // Horários para visão Diária (07:00 às 22:00)
+  const hoursOfDay = Array.from({ length: 16 }, (_, i) => i + 7);
+
+  const isToday = (d) => {
+    const today = new Date();
+    return d.getDate() === today.getDate() &&
+           d.getMonth() === today.getMonth() &&
+           d.getFullYear() === today.getFullYear();
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      {/* Cabeçalho da Página */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Reservas de Recursos</h1>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <CalendarCheck className="w-6 h-6 text-teal-600" />
+            Gestão de Reservas e Agendamentos
+          </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Agendamentos com prevenção automática de sobreposição e verificação de habilitação
+            Controle de ocupação com calendário dinâmico, busca avançada e prevenção de conflitos
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Alternador de Filtro: Ativas / Todas */}
+          {/* Alternador de Visualização: Tabela vs Calendário */}
           <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600 border border-slate-200">
             <button
-              onClick={() => setFiltroStatus('ativas')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                filtroStatus === 'ativas'
+              onClick={() => setViewMode('tabela')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                viewMode === 'tabela'
                   ? 'bg-white text-teal-700 shadow-2xs font-bold'
                   : 'hover:text-slate-900'
               }`}
             >
-              Ativas ({reservas.filter(r => (r.status || '').toLowerCase() !== 'cancelada').length})
+              <List className="w-3.5 h-3.5" />
+              Tabela / Lista
             </button>
             <button
-              onClick={() => setFiltroStatus('todas')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                filtroStatus === 'todas'
+              onClick={() => setViewMode('calendario')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                viewMode === 'calendario'
                   ? 'bg-white text-teal-700 shadow-2xs font-bold'
                   : 'hover:text-slate-900'
               }`}
             >
-              Todas / Histórico ({reservas.length})
+              <CalendarIcon className="w-3.5 h-3.5" />
+              Calendário
             </button>
           </div>
 
           <button
-            onClick={handleOpenModal}
+            onClick={() => handleOpenModal()}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-sm transition cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            Solicitar Nova Reserva
+            Nova Reserva
           </button>
         </div>
       </div>
 
+      {/* Alertas de Notificação */}
       {error && (
-        <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center justify-between gap-2">
+        <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center justify-between gap-2 shadow-xs">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
             <span>{error}</span>
@@ -182,7 +361,7 @@ export default function Reservas() {
       )}
 
       {success && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center justify-between gap-2">
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center justify-between gap-2 shadow-xs">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{success}</span>
@@ -193,123 +372,594 @@ export default function Reservas() {
         </div>
       )}
 
-      {/* Lista de Reservas */}
-      {loading ? (
-        <div className="py-12 flex justify-center">
-          <div className="w-8 h-8 border-3 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+      {/* Barra de Busca e Filtros Combinados */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4 shadow-xs">
+        <div className="flex flex-col md:flex-row items-center gap-3">
+          {/* Busca Textual */}
+          <form onSubmit={handleSearchSubmit} className="relative flex-1 w-full">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Buscar por solicitante, recurso, patrimônio ou finalidade..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 text-xs bg-slate-50/50 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition"
+            />
+          </form>
+
+          {/* Botão de Filtros Avançados */}
+          <button
+            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold border transition shrink-0 cursor-pointer ${
+              showAdvancedFilters || activeFiltersCount > 0
+                ? 'bg-teal-50 text-teal-700 border-teal-200'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            <span>Filtros</span>
+            {activeFiltersCount > 0 && (
+              <span className="w-4.5 h-4.5 rounded-full bg-teal-600 text-white text-[10px] flex items-center justify-center font-bold">
+                {activeFiltersCount}
+              </span>
+            )}
+          </button>
+
+          {activeFiltersCount > 0 && (
+            <button
+              onClick={handleResetFilters}
+              className="flex items-center gap-1 text-slate-400 hover:text-slate-600 text-xs px-2 py-1 transition cursor-pointer"
+              title="Limpar todos os filtros"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Limpar
+            </button>
+          )}
         </div>
-      ) : reservas.filter(r => filtroStatus === 'todas' || (r.status || 'confirmada').toLowerCase() !== 'cancelada').length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-400 text-sm">
-          {filtroStatus === 'ativas' ? 'Nenhuma reserva ativa no momento (todas foram concluídas ou canceladas).' : 'Nenhuma reserva registrada.'}
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
-              <thead className="bg-slate-50 text-slate-600 uppercase font-semibold text-[10px] tracking-wider">
-                <tr>
-                  <th className="px-5 py-3">Recurso</th>
-                  <th className="px-5 py-3">Solicitante</th>
-                  <th className="px-5 py-3">Período Reservado</th>
-                  <th className="px-5 py-3">Finalidade</th>
-                  <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {reservas
-                  .filter(r => filtroStatus === 'todas' || (r.status || 'confirmada').toLowerCase() !== 'cancelada')
-                  .map((r) => {
-                  const resId = r.id || r.id_reserva;
-                  const status = (r.status || 'confirmada').toLowerCase();
-                  const userRole = (user?.perfil || '').toLowerCase();
-                  const isPrivileged = isAdmin || userRole === 'professor' || userRole === 'docente';
-                  const isOwner = Number(r.usuario_id || r.id_usuario) === Number(user?.id);
-                  const canCancel = (isOwner || isPrivileged) && status !== 'cancelada';
+
+        {/* Painel Expansível de Filtros Avançados */}
+        {showAdvancedFilters && (
+          <div className="pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            {/* Tipo de Recurso */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Recurso</label>
+              <select
+                value={filtroTipoRecurso}
+                onChange={(e) => setFiltroTipoRecurso(e.target.value)}
+                className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-teal-500"
+              >
+                <option value="todos">Todos os Recursos</option>
+                <option value="equipamento">Apenas Equipamentos</option>
+                <option value="espaco">Apenas Espaços / Salas</option>
+              </select>
+            </div>
+
+            {/* Laboratório / Espaço */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Laboratório</label>
+              <select
+                value={filtroEspacoId}
+                onChange={(e) => setFiltroEspacoId(e.target.value)}
+                className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-teal-500"
+              >
+                <option value="">Todos os Laboratórios</option>
+                {espacos.map(esp => (
+                  <option key={esp.id || esp.id_espaco} value={esp.id || esp.id_espaco}>
+                    {esp.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Equipamento */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Equipamento</label>
+              <select
+                value={filtroEquipamentoId}
+                onChange={(e) => setFiltroEquipamentoId(e.target.value)}
+                className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-teal-500"
+              >
+                <option value="">Todos os Equipamentos</option>
+                {equipamentos.map(eq => (
+                  <option key={eq.id || eq.id_equipamento} value={eq.id || eq.id_equipamento}>
+                    {eq.nome} ({eq.codigo_patrimonio})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Status */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Status</label>
+              <select
+                value={filtroStatus}
+                onChange={(e) => setFiltroStatus(e.target.value)}
+                className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-teal-500"
+              >
+                <option value="todas">Todos os Status</option>
+                <option value="confirmada">Confirmada</option>
+                <option value="em_andamento">Em Andamento</option>
+                <option value="pendente">Pendente</option>
+                <option value="concluida">Concluída</option>
+                <option value="cancelada">Cancelada</option>
+              </select>
+            </div>
+
+            {/* Período De / Até */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Período A Partir De</label>
+              <input
+                type="date"
+                value={filtroDataInicio}
+                onChange={(e) => setFiltroDataInicio(e.target.value)}
+                className="w-full px-2 py-1.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-teal-500"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* VISÃO 1: CALENDÁRIO INTERATIVO */}
+      {viewMode === 'calendario' && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+          {/* Barra Superior do Calendário */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                <button
+                  onClick={handlePrevDate}
+                  className="p-1.5 hover:bg-white text-slate-600 hover:text-slate-900 rounded-lg transition"
+                  title="Anterior"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleToday}
+                  className="px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-white rounded-lg transition"
+                >
+                  Hoje
+                </button>
+                <button
+                  onClick={handleNextDate}
+                  className="p-1.5 hover:bg-white text-slate-600 hover:text-slate-900 rounded-lg transition"
+                  title="Próximo"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              <h2 className="text-base font-bold text-slate-800 capitalize tracking-tight">
+                {calendarMode === 'dia'
+                  ? currentDate.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                  : currentMonthName}
+              </h2>
+            </div>
+
+            {/* Seletor de modo do Calendário: Mês, Semana, Dia */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600">
+              <button
+                onClick={() => setCalendarMode('mes')}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  calendarMode === 'mes' ? 'bg-white text-teal-700 font-bold shadow-2xs' : 'hover:text-slate-900'
+                }`}
+              >
+                Mês
+              </button>
+              <button
+                onClick={() => setCalendarMode('semana')}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  calendarMode === 'semana' ? 'bg-white text-teal-700 font-bold shadow-2xs' : 'hover:text-slate-900'
+                }`}
+              >
+                Semana
+              </button>
+              <button
+                onClick={() => setCalendarMode('dia')}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  calendarMode === 'dia' ? 'bg-white text-teal-700 font-bold shadow-2xs' : 'hover:text-slate-900'
+                }`}
+              >
+                Dia
+              </button>
+            </div>
+          </div>
+
+          {/* MODO MÊS */}
+          {calendarMode === 'mes' && (
+            <div className="space-y-1">
+              {/* Dias da Semana */}
+              <div className="grid grid-cols-7 gap-1 text-center font-bold text-[11px] text-slate-400 uppercase py-2">
+                <span>Dom</span>
+                <span>Seg</span>
+                <span>Ter</span>
+                <span>Qua</span>
+                <span>Qui</span>
+                <span>Sex</span>
+                <span>Sáb</span>
+              </div>
+
+              {/* Grade de Dias */}
+              <div className="grid grid-cols-7 gap-1.5">
+                {calendarDays.map((cell, idx) => {
+                  const dateKey = cell.date.toISOString().slice(0, 10);
+                  const reservasDoDia = reservasPorData[dateKey] || [];
+                  const diaHoje = isToday(cell.date);
 
                   return (
-                    <tr key={resId} className="hover:bg-slate-50/50 transition">
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center shrink-0">
-                            {r.equipamento_nome ? <Cpu className="w-3.5 h-3.5" /> : <Building2 className="w-3.5 h-3.5" />}
-                          </div>
-                          <div>
-                            <span className="font-semibold text-slate-800">
-                              {r.equipamento_nome || r.espaco_nome || `Recurso #${resId}`}
-                            </span>
-                            {r.equipamento_codigo && (
-                              <span className="block font-mono text-[10px] text-slate-400">
-                                {r.equipamento_codigo}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="px-5 py-3.5 text-slate-600">
-                        <span className="font-medium text-slate-800">{r.usuario_nome || `Usuário #${r.usuario_id}`}</span>
-                        {r.usuario_email && <span className="block text-[10px] text-slate-400">{r.usuario_email}</span>}
-                      </td>
-
-                      <td className="px-5 py-3.5 text-slate-600">
-                        <div>De: <strong>{r.data_inicio ? new Date(r.data_inicio).toLocaleString('pt-BR') : '-'}</strong></div>
-                        <div>Até: <strong>{r.data_fim ? new Date(r.data_fim).toLocaleString('pt-BR') : '-'}</strong></div>
-                      </td>
-
-                      <td className="px-5 py-3.5 text-slate-500 max-w-xs truncate">
-                        {r.finalidade || r.observacoes || 'Uso acadêmico/pesquisa'}
-                      </td>
-
-                      <td className="px-5 py-3.5">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          status === 'confirmada' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                          status === 'cancelada' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                          status === 'em_andamento' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                          status === 'pendente' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                          'bg-slate-100 text-slate-600'
+                    <div
+                      key={idx}
+                      className={`min-h-[105px] p-1.5 rounded-xl border flex flex-col justify-between transition ${
+                        cell.isCurrentMonth
+                          ? diaHoje
+                            ? 'bg-teal-50/40 border-teal-300 ring-1 ring-teal-400/20'
+                            : 'bg-white border-slate-200 hover:border-slate-300'
+                          : 'bg-slate-50/60 border-slate-100 text-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-md ${
+                          diaHoje
+                            ? 'bg-teal-600 text-white'
+                            : cell.isCurrentMonth ? 'text-slate-700' : 'text-slate-300'
                         }`}>
-                          {status}
+                          {cell.date.getDate()}
                         </span>
-                      </td>
-
-                      <td className="px-5 py-3.5 text-right">
-                        {status === 'cancelada' ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400">
-                            <XCircle className="w-3.5 h-3.5 text-slate-400" />
-                            Cancelada
-                          </span>
-                        ) : canCancel ? (
-                          <button
-                            onClick={() => handleCancel(resId)}
-                            disabled={cancellingId === resId}
-                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 transition cursor-pointer disabled:opacity-50"
-                            title="Cancelar esta reserva"
-                          >
-                            <XCircle className="w-3.5 h-3.5" />
-                            {cancellingId === resId ? 'Cancelando...' : 'Cancelar'}
-                          </button>
-                        ) : (
-                          <span className="text-[10px] text-slate-400 italic" title="Apenas o solicitante ou a administração podem cancelar esta reserva">
-                            Apenas solicitante
+                        {reservasDoDia.length > 0 && (
+                          <span className="text-[10px] font-medium text-slate-400">
+                            {reservasDoDia.length} res.
                           </span>
                         )}
-                      </td>
-                    </tr>
+                      </div>
+
+                      {/* Lista de Reservas neste Dia */}
+                      <div className="space-y-1 my-1 overflow-y-auto max-h-[65px] scrollbar-thin">
+                        {reservasDoDia.slice(0, 3).map((r) => {
+                          const status = (r.status || 'confirmada').toLowerCase();
+                          const isCanc = status === 'cancelada';
+                          const horaInicio = r.data_inicio ? new Date(r.data_inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+                          return (
+                            <button
+                              key={r.id}
+                              onClick={() => {
+                                setReservaSelecionada(r);
+                                setDetalheModalOpen(true);
+                              }}
+                              className={`w-full text-left px-1.5 py-0.5 rounded text-[10px] font-medium truncate flex items-center gap-1 transition ${
+                                isCanc
+                                  ? 'bg-rose-50 text-rose-500 line-through'
+                                  : status === 'em_andamento'
+                                  ? 'bg-blue-100 text-blue-800 font-semibold'
+                                  : 'bg-teal-50 text-teal-800 hover:bg-teal-100'
+                              }`}
+                              title={`${horaInicio} - ${r.equipamento_nome || r.espaco_nome} (${r.usuario_nome})`}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-teal-500"></span>
+                              <span className="shrink-0">{horaInicio}</span>
+                              <span className="truncate">{r.equipamento_nome || r.espaco_nome}</span>
+                            </button>
+                          );
+                        })}
+                        {reservasDoDia.length > 3 && (
+                          <button
+                            onClick={() => {
+                              setCurrentDate(cell.date);
+                              setCalendarMode('dia');
+                            }}
+                            className="text-[9px] font-bold text-teal-600 hover:underline w-full text-center"
+                          >
+                            +{reservasDoDia.length - 3} mais...
+                          </button>
+                        )}
+                      </div>
+
+                      {cell.isCurrentMonth && (
+                        <button
+                          onClick={() => handleOpenModal(cell.date)}
+                          className="text-[10px] text-slate-400 hover:text-teal-600 hover:bg-teal-50/50 rounded py-0.5 transition text-center opacity-0 hover:opacity-100"
+                        >
+                          + Agendar
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODO SEMANA */}
+          {calendarMode === 'semana' && (
+            <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+              {weekDays.map((d, idx) => {
+                const dateKey = d.toISOString().slice(0, 10);
+                const reservasDoDia = reservasPorData[dateKey] || [];
+                const diaHoje = isToday(d);
+
+                return (
+                  <div
+                    key={idx}
+                    className={`rounded-2xl border p-3 flex flex-col justify-between min-h-[300px] ${
+                      diaHoje ? 'bg-teal-50/30 border-teal-300 ring-1 ring-teal-400/20' : 'bg-slate-50/50 border-slate-200'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 mb-2">
+                        <span className="text-xs font-bold text-slate-700 uppercase">
+                          {d.toLocaleDateString('pt-BR', { weekday: 'short' })}
+                        </span>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${
+                          diaHoje ? 'bg-teal-600 text-white' : 'text-slate-800'
+                        }`}>
+                          {d.getDate()}/{d.getMonth() + 1}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        {reservasDoDia.length === 0 ? (
+                          <p className="text-[11px] text-slate-400 italic text-center py-4">Livre</p>
+                        ) : (
+                          reservasDoDia.map(r => {
+                            const status = (r.status || 'confirmada').toLowerCase();
+                            const isCanc = status === 'cancelada';
+                            const horaI = new Date(r.data_inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                            const horaF = new Date(r.data_fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+                            return (
+                              <div
+                                key={r.id}
+                                onClick={() => {
+                                  setReservaSelecionada(r);
+                                  setDetalheModalOpen(true);
+                                }}
+                                className={`p-2 rounded-xl border text-xs cursor-pointer transition ${
+                                  isCanc
+                                    ? 'bg-rose-50 border-rose-200 opacity-60'
+                                    : 'bg-white border-slate-200 hover:border-teal-500 shadow-2xs'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
+                                  <span className="font-mono font-bold text-teal-700">{horaI} - {horaF}</span>
+                                  <span className={`px-1.5 py-0.2 rounded font-bold uppercase text-[9px] ${
+                                    isCanc ? 'text-rose-600' : 'text-emerald-700'
+                                  }`}>
+                                    {status}
+                                  </span>
+                                </div>
+                                <div className="font-bold text-slate-800 text-[11px] truncate">
+                                  {r.equipamento_nome || r.espaco_nome}
+                                </div>
+                                <div className="text-[10px] text-slate-500 truncate">{r.usuario_nome}</div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleOpenModal(d)}
+                      className="mt-3 w-full py-1.5 text-center text-[11px] font-semibold text-teal-600 hover:bg-teal-50 rounded-xl transition"
+                    >
+                      + Reservar neste dia
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* MODO DIA */}
+          {calendarMode === 'dia' && (
+            <div className="space-y-3">
+              <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white">
+                {hoursOfDay.map(hour => {
+                  const hourStr = String(hour).padStart(2, '0');
+                  const currDayReservas = reservasPorData[currentDate.toISOString().slice(0, 10)] || [];
+                  const reservasDaHora = currDayReservas.filter(r => {
+                    const startH = new Date(r.data_inicio).getHours();
+                    const endH = new Date(r.data_fim).getHours();
+                    return startH <= hour && endH >= hour;
+                  });
+
+                  return (
+                    <div key={hour} className="flex items-start gap-4 p-3 hover:bg-slate-50/50 transition">
+                      <div className="w-16 font-mono font-bold text-xs text-slate-500 shrink-0 pt-1">
+                        {hourStr}:00
+                      </div>
+
+                      <div className="flex-1 space-y-2">
+                        {reservasDaHora.length === 0 ? (
+                          <div className="flex items-center justify-between text-xs text-slate-400">
+                            <span>Horário disponível</span>
+                            <button
+                              onClick={() => {
+                                const d = new Date(currentDate);
+                                d.setHours(hour, 0, 0);
+                                handleOpenModal(d);
+                              }}
+                              className="text-[11px] text-teal-600 font-semibold hover:underline"
+                            >
+                              + Agendar
+                            </button>
+                          </div>
+                        ) : (
+                          reservasDaHora.map(r => (
+                            <div
+                              key={r.id}
+                              onClick={() => {
+                                setReservaSelecionada(r);
+                                setDetalheModalOpen(true);
+                              }}
+                              className="p-3 bg-teal-50/60 border border-teal-200 rounded-xl cursor-pointer hover:bg-teal-50 transition flex items-center justify-between"
+                            >
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-slate-800 text-xs">
+                                    {r.equipamento_nome || r.espaco_nome}
+                                  </span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-600 text-white font-bold uppercase">
+                                    {r.status}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-600">
+                                  Solicitante: <strong>{r.usuario_nome}</strong> | Finalidade: {r.finalidade || 'Uso acadêmico'}
+                                </p>
+                              </div>
+                              <div className="text-right font-mono text-xs text-slate-500">
+                                {new Date(r.data_inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - {new Date(r.data_fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Modal Nova Reserva */}
+      {/* VISÃO 2: TABELA ADMINISTRATIVA / LISTA */}
+      {viewMode === 'tabela' && (
+        <>
+          {loading ? (
+            <div className="py-12 flex justify-center">
+              <div className="w-8 h-8 border-3 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          ) : filteredReservas.length === 0 ? (
+            <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-400 text-sm">
+              Nenhuma reserva encontrada com os filtros selecionados.
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-600 uppercase font-semibold text-[10px] tracking-wider">
+                    <tr>
+                      <th className="px-5 py-3">Recurso</th>
+                      <th className="px-5 py-3">Solicitante</th>
+                      <th className="px-5 py-3">Período Reservado</th>
+                      <th className="px-5 py-3">Finalidade</th>
+                      <th className="px-5 py-3">Status</th>
+                      <th className="px-5 py-3 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredReservas.map((r) => {
+                      const resId = r.id || r.id_reserva;
+                      const status = (r.status || 'confirmada').toLowerCase();
+                      const userRole = (user?.perfil || '').toLowerCase();
+                      const isPrivileged = isAdmin || userRole === 'professor' || userRole === 'docente';
+                      const isOwner = Number(r.usuario_id || r.id_usuario) === Number(user?.id);
+                      const canCancel = (isOwner || isPrivileged) && status !== 'cancelada';
+
+                      return (
+                        <tr key={resId} className="hover:bg-slate-50/50 transition">
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center shrink-0">
+                                {r.equipamento_nome ? <Cpu className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
+                              </div>
+                              <div>
+                                <span className="font-semibold text-slate-800">
+                                  {r.equipamento_nome || r.espaco_nome || `Recurso #${resId}`}
+                                </span>
+                                {r.equipamento_codigo && (
+                                  <span className="block font-mono text-[10px] text-slate-400">
+                                    UFPI: {r.equipamento_codigo} {r.equipamento_codigo_labcontrol ? `| LC: ${r.equipamento_codigo_labcontrol}` : ''}
+                                  </span>
+                                )}
+                                {r.espaco_nome && r.equipamento_nome && (
+                                  <span className="block text-[10px] text-teal-600 font-medium">
+                                    Local: {r.espaco_nome}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-5 py-3.5 text-slate-600">
+                            <span className="font-semibold text-slate-800">{r.usuario_nome || `Usuário #${r.usuario_id}`}</span>
+                            {r.usuario_email && <span className="block text-[10px] text-slate-400">{r.usuario_email}</span>}
+                          </td>
+
+                          <td className="px-5 py-3.5 text-slate-600">
+                            <div>De: <strong>{r.data_inicio ? new Date(r.data_inicio).toLocaleString('pt-BR') : '-'}</strong></div>
+                            <div>Até: <strong>{r.data_fim ? new Date(r.data_fim).toLocaleString('pt-BR') : '-'}</strong></div>
+                          </td>
+
+                          <td className="px-5 py-3.5 text-slate-600 max-w-xs">
+                            <span className="line-clamp-2">{r.finalidade || r.observacoes || 'Uso acadêmico/pesquisa'}</span>
+                          </td>
+
+                          <td className="px-5 py-3.5">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                              status === 'confirmada' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                              status === 'cancelada' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                              status === 'em_andamento' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                              status === 'pendente' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                              'bg-slate-100 text-slate-600'
+                            }`}>
+                              {status}
+                            </span>
+                          </td>
+
+                          <td className="px-5 py-3.5 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setReservaSelecionada(r);
+                                  setDetalheModalOpen(true);
+                                }}
+                                className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
+                                title="Ver detalhes completos"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+
+                              {status === 'cancelada' ? (
+                                <span className="text-[11px] text-slate-400 font-medium px-2 py-1">
+                                  Cancelada
+                                </span>
+                              ) : canCancel ? (
+                                <button
+                                  onClick={() => handleCancel(resId)}
+                                  disabled={cancellingId === resId}
+                                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 transition cursor-pointer disabled:opacity-50"
+                                  title="Cancelar esta reserva"
+                                >
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  {cancellingId === resId ? '...' : 'Cancelar'}
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 italic">
+                                  Solicitante
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Modal 1: Nova Reserva */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
-              <h3 className="font-bold text-slate-800 text-base">Solicitar Reserva de Recurso</h3>
+              <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
+                <CalendarCheck className="w-5 h-5 text-teal-600" />
+                Solicitar Reserva de Recurso
+              </h3>
               <button onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>
@@ -399,7 +1049,7 @@ export default function Reservas() {
               {/* Data Início e Fim */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Data e Hora de Início</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Início da Reserva</label>
                   <input
                     type="datetime-local"
                     required
@@ -409,7 +1059,7 @@ export default function Reservas() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Data e Hora de Término</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Término da Reserva</label>
                   <input
                     type="datetime-local"
                     required
@@ -427,9 +1077,20 @@ export default function Reservas() {
                   required
                   value={formData.finalidade}
                   onChange={(e) => setFormData({ ...formData, finalidade: e.target.value })}
-                  placeholder="Ex: Trabalho de Conclusão de Curso - Impressão de chassi robótico"
+                  placeholder="Ex: TCC - Fabricação mecânica e testes"
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Observações Adicionais (opcional)</label>
+                <textarea
+                  rows="2"
+                  value={formData.observacoes}
+                  onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
+                  placeholder="Materiais que serão levados ou observações de segurança..."
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                ></textarea>
               </div>
 
               <div className="pt-3 flex justify-end gap-2">
@@ -448,6 +1109,99 @@ export default function Reservas() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2: Detalhes da Reserva Selecionada (ao clicar no calendário ou lista) */}
+      {detalheModalOpen && reservaSelecionada && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
+                <Info className="w-5 h-5 text-teal-600" />
+                Detalhes da Reserva #{reservaSelecionada.id || reservaSelecionada.id_reserva}
+              </h3>
+              <button onClick={() => setDetalheModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl space-y-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400">Recurso Reservado</span>
+                <div className="font-bold text-slate-900 text-sm">
+                  {reservaSelecionada.equipamento_nome || reservaSelecionada.espaco_nome}
+                </div>
+                {reservaSelecionada.equipamento_codigo && (
+                  <div className="text-[11px] font-mono text-slate-500">
+                    Patrimônio: {reservaSelecionada.equipamento_codigo}
+                  </div>
+                )}
+                {reservaSelecionada.espaco_nome && reservaSelecionada.equipamento_nome && (
+                  <div className="text-[11px] text-teal-700 font-medium">
+                    Laboratório: {reservaSelecionada.espaco_nome}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Solicitante</span>
+                  <div className="font-semibold text-slate-800">{reservaSelecionada.usuario_nome || 'N/A'}</div>
+                  <div className="text-[11px] text-slate-500">{reservaSelecionada.usuario_email || ''}</div>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Status</span>
+                  <div>
+                    <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-200">
+                      {reservaSelecionada.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400">Horário Agendado</span>
+                <div className="text-slate-800 font-medium">
+                  {new Date(reservaSelecionada.data_inicio).toLocaleString('pt-BR')} até{' '}
+                  {new Date(reservaSelecionada.data_fim).toLocaleString('pt-BR')}
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400">Finalidade</span>
+                <p className="text-slate-700">{reservaSelecionada.finalidade || 'Uso acadêmico'}</p>
+              </div>
+
+              {reservaSelecionada.observacoes && (
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Observações</span>
+                  <p className="text-slate-600 bg-slate-50 p-2 rounded-lg">{reservaSelecionada.observacoes}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-5 border-t border-slate-100 mt-5 flex items-center justify-between">
+              {(reservaSelecionada.status || '').toLowerCase() !== 'cancelada' ? (
+                <button
+                  onClick={() => handleCancel(reservaSelecionada.id || reservaSelecionada.id_reserva)}
+                  disabled={cancellingId === (reservaSelecionada.id || reservaSelecionada.id_reserva)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 transition"
+                >
+                  Cancelar Reserva
+                </button>
+              ) : (
+                <span className="text-xs text-rose-500 font-medium">Esta reserva já foi cancelada</span>
+              )}
+
+              <button
+                onClick={() => setDetalheModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}

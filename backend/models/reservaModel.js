@@ -15,39 +15,92 @@ async function getAllReservas(filters = {}) {
   let sql = `
     SELECT r.*,
            u.nome AS usuario_nome, u.email AS usuario_email,
-           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo,
-           s.nome AS espaco_nome
+           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo, e.codigo_labcontrol AS equipamento_codigo_labcontrol,
+           s.nome AS espaco_nome,
+           es.nome AS equipamento_espaco_nome
     FROM \`${TABLE}\` r
     LEFT JOIN \`usuario\` u ON r.\`${fkUser}\` = u.\`${userPk}\`
     LEFT JOIN \`equipamento\` e ON r.\`${fkEquip}\` = e.\`${equipPk}\`
     LEFT JOIN \`espaco\` s ON r.\`${fkEspaco}\` = s.\`${espacoPk}\`
+    LEFT JOIN \`espaco\` es ON e.espaco_id = es.\`${espacoPk}\`
   `;
 
   const whereClauses = [];
   const values = [];
 
+  // Busca textual
+  if (filters.search && filters.search.trim()) {
+    whereClauses.push(`(
+      r.finalidade LIKE ? OR
+      r.observacoes LIKE ? OR
+      u.nome LIKE ? OR
+      u.email LIKE ? OR
+      e.nome LIKE ? OR
+      e.codigo_patrimonio LIKE ? OR
+      s.nome LIKE ?
+    )`);
+    const term = `%${filters.search.trim()}%`;
+    values.push(term, term, term, term, term, term, term);
+  }
+
+  // Filtro por tipo de recurso
+  if (filters.tipo_recurso === 'equipamento') {
+    whereClauses.push(`r.\`${fkEquip}\` IS NOT NULL`);
+  } else if (filters.tipo_recurso === 'espaco') {
+    whereClauses.push(`r.\`${fkEquip}\` IS NULL AND r.\`${fkEspaco}\` IS NOT NULL`);
+  }
+
+  // Filtro por solicitante
   if (filters.usuario_id) {
     whereClauses.push(`r.\`${fkUser}\` = ?`);
     values.push(filters.usuario_id);
   }
+
+  // Filtro por equipamento específico
   if (filters.equipamento_id) {
     whereClauses.push(`r.\`${fkEquip}\` = ?`);
     values.push(filters.equipamento_id);
   }
+
+  // Filtro por espaço / laboratório (seja reserva do espaço ou equipamento localizado nele)
   if (filters.espaco_id) {
-    whereClauses.push(`r.\`${fkEspaco}\` = ?`);
-    values.push(filters.espaco_id);
+    whereClauses.push(`(r.\`${fkEspaco}\` = ? OR e.espaco_id = ?)`);
+    values.push(filters.espaco_id, filters.espaco_id);
   }
-  if (filters.status) {
-    whereClauses.push(`r.status = ?`);
+
+  // Filtro por status
+  if (filters.status && filters.status !== 'todas') {
+    whereClauses.push(`LOWER(r.status) = LOWER(?)`);
     values.push(filters.status);
+  }
+
+  // Filtro por período
+  if (filters.data_inicio_de) {
+    whereClauses.push(`r.data_inicio >= ?`);
+    values.push(filters.data_inicio_de);
+  }
+  if (filters.data_fim_ate) {
+    whereClauses.push(`r.data_fim <= ?`);
+    values.push(filters.data_fim_ate);
+  }
+
+  // Filtro de recorrência
+  if (filters.grupo_recorrencia_id) {
+    whereClauses.push(`r.grupo_recorrencia_id = ?`);
+    values.push(filters.grupo_recorrencia_id);
+  }
+
+  // Filtro de no-show
+  if (filters.no_show !== undefined && filters.no_show !== '') {
+    whereClauses.push(`r.no_show = ?`);
+    values.push(Number(filters.no_show) ? 1 : 0);
   }
 
   if (whereClauses.length > 0) {
     sql += ` WHERE ${whereClauses.join(' AND ')}`;
   }
 
-  sql += ` ORDER BY r.\`${pk}\` DESC`;
+  sql += ` ORDER BY r.data_inicio DESC`;
 
   const [rows] = await pool.query(sql, values);
   return rows;
@@ -66,12 +119,14 @@ async function getReservaById(id) {
   const sql = `
     SELECT r.*,
            u.nome AS usuario_nome, u.email AS usuario_email,
-           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo,
-           s.nome AS espaco_nome
+           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo, e.codigo_labcontrol AS equipamento_codigo_labcontrol,
+           s.nome AS espaco_nome,
+           es.nome AS equipamento_espaco_nome
     FROM \`${TABLE}\` r
     LEFT JOIN \`usuario\` u ON r.\`${fkUser}\` = u.\`${userPk}\`
     LEFT JOIN \`equipamento\` e ON r.\`${fkEquip}\` = e.\`${equipPk}\`
     LEFT JOIN \`espaco\` s ON r.\`${fkEspaco}\` = s.\`${espacoPk}\`
+    LEFT JOIN \`espaco\` es ON e.espaco_id = es.\`${espacoPk}\`
     WHERE r.\`${pk}\` = ?
     LIMIT 1
   `;
@@ -119,7 +174,61 @@ async function checkConflict({ equipamento_id, espaco_id, data_inicio, data_fim,
     params.push(excludeId);
   }
 
-  const sql = `SELECT * FROM \`${TABLE}\` r WHERE ${conditions.join(' AND ')}`;
+  const sql = `
+    SELECT r.*,
+           u.nome AS usuario_nome,
+           e.nome AS equipamento_nome,
+           s.nome AS espaco_nome
+    FROM \`${TABLE}\` r
+    LEFT JOIN usuario u ON r.usuario_id = u.id
+    LEFT JOIN equipamento e ON r.equipamento_id = e.id
+    LEFT JOIN espaco s ON r.espaco_id = s.id
+    WHERE ${conditions.join(' AND ')}
+  `;
+  const [rows] = await pool.query(sql, params);
+  return rows;
+}
+
+/**
+ * Consulta de eventos do calendário em um intervalo
+ */
+async function getReservasCalendario({ inicio, fim, espaco_id, equipamento_id }) {
+  const conditions = [];
+  const params = [];
+
+  if (inicio) {
+    conditions.push('r.data_fim >= ?');
+    params.push(inicio);
+  }
+  if (fim) {
+    conditions.push('r.data_inicio <= ?');
+    params.push(fim);
+  }
+  if (espaco_id) {
+    conditions.push('(r.espaco_id = ? OR e.espaco_id = ?)');
+    params.push(espaco_id, espaco_id);
+  }
+  if (equipamento_id) {
+    conditions.push('r.equipamento_id = ?');
+    params.push(equipamento_id);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const sql = `
+    SELECT r.id, r.data_inicio, r.data_fim, r.finalidade, r.status,
+           r.grupo_recorrencia_id, r.recorrente, r.no_show,
+           u.nome AS usuario_nome,
+           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo,
+           s.nome AS espaco_nome
+    FROM \`${TABLE}\` r
+    LEFT JOIN usuario u ON r.usuario_id = u.id
+    LEFT JOIN equipamento e ON r.equipamento_id = e.id
+    LEFT JOIN espaco s ON r.espaco_id = s.id
+    ${where}
+    ORDER BY r.data_inicio ASC
+  `;
+
   const [rows] = await pool.query(sql, params);
   return rows;
 }
@@ -143,6 +252,7 @@ module.exports = {
   getAllReservas,
   getReservaById,
   checkConflict,
+  getReservasCalendario,
   createReserva,
   updateReserva,
   cancelReserva
