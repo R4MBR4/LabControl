@@ -28,7 +28,9 @@ import {
   FileText,
   ExternalLink,
   Plus,
-  Trash2
+  Trash2,
+  ClipboardList,
+  Save
 } from 'lucide-react';
 
 const AUDIT_ACTION_LABELS = {
@@ -74,6 +76,24 @@ function formatEventDetails(details = {}) {
     if (typeof value === 'object') return `${key}: ${JSON.stringify(value)}`;
     return `${key}: ${String(value)}`;
   }).filter(Boolean).join(' · ');
+}
+
+function formatDateOnly(value) {
+  if (!value) return 'Não informado';
+  const dateValue = String(value).slice(0, 10);
+  const date = new Date(`${dateValue}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? 'Não informado' : date.toLocaleDateString('pt-BR');
+}
+
+function technicalFormFromEquipment(equipment) {
+  return {
+    especificacoes: equipment.especificacoes || '',
+    data_aquisicao: equipment.data_aquisicao ? String(equipment.data_aquisicao).slice(0, 10) : '',
+    valor_aquisicao: equipment.valor_aquisicao ?? '',
+    fornecedor: equipment.fornecedor || '',
+    garantia_ate: equipment.garantia_ate ? String(equipment.garantia_ate).slice(0, 10) : '',
+    garantia_detalhes: equipment.garantia_detalhes || ''
+  };
 }
 
 function buildEquipmentTimeline(data) {
@@ -136,6 +156,16 @@ export default function EquipamentoDetalhes() {
   const [documentForm, setDocumentForm] = useState({ titulo: '', tipo: 'manual', url: '', descricao: '' });
   const [documentError, setDocumentError] = useState('');
   const [savingDocument, setSavingDocument] = useState(false);
+  const [technicalForm, setTechnicalForm] = useState({
+    especificacoes: '',
+    data_aquisicao: '',
+    valor_aquisicao: '',
+    fornecedor: '',
+    garantia_ate: '',
+    garantia_detalhes: ''
+  });
+  const [technicalError, setTechnicalError] = useState('');
+  const [savingTechnicalData, setSavingTechnicalData] = useState(false);
 
   useEffect(() => {
     async function loadHistorico() {
@@ -144,6 +174,7 @@ export default function EquipamentoDetalhes() {
         setPageError('');
         const res = await api.get(`/equipamentos/${id}/historico`);
         setData(res.data);
+        setTechnicalForm(technicalFormFromEquipment(res.data.equipamento));
       } catch (err) {
         console.error('[EquipamentoDetalhes] Erro:', err);
         setPageError(err.response?.status === 404
@@ -155,6 +186,25 @@ export default function EquipamentoDetalhes() {
     }
     loadHistorico();
   }, [id]);
+
+  const saveTechnicalData = async (event) => {
+    event.preventDefault();
+    setTechnicalError('');
+    setSavingTechnicalData(true);
+    try {
+      const response = await api.put(`/equipamentos/${id}`, {
+        ...technicalForm,
+        valor_aquisicao: technicalForm.valor_aquisicao === '' ? null : technicalForm.valor_aquisicao
+      });
+      setData((current) => ({ ...current, equipamento: response.data }));
+      setTechnicalForm(technicalFormFromEquipment(response.data));
+    } catch (error) {
+      console.error('[EquipamentoDetalhes] Erro ao atualizar dados técnicos:', error);
+      setTechnicalError(error.response?.data?.error || 'Não foi possível atualizar os dados técnicos.');
+    } finally {
+      setSavingTechnicalData(false);
+    }
+  };
 
   const addTechnicalDocument = async (event) => {
     event.preventDefault();
@@ -373,6 +423,18 @@ export default function EquipamentoDetalhes() {
       <div className="overflow-x-auto border-b border-slate-200">
         <nav className="flex min-w-max space-x-6 text-xs font-semibold">
           <button
+            onClick={() => setActiveTab('dados-tecnicos')}
+            className={`pb-3 border-b-2 transition flex items-center gap-2 ${
+              activeTab === 'dados-tecnicos'
+                ? 'border-teal-600 text-teal-700 font-bold'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <ClipboardList className="w-4 h-4" />
+            <span>Dados técnicos</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('documentos')}
             className={`pb-3 border-b-2 transition flex items-center gap-2 ${
               activeTab === 'documentos'
@@ -436,6 +498,129 @@ export default function EquipamentoDetalhes() {
 
       {/* Conteúdo da Aba Ativa */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+        {activeTab === 'dados-tecnicos' && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">Dados técnicos, aquisição e garantia</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Informações opcionais do equipamento e links para manuais e anexos na aba Documentos.
+              </p>
+            </div>
+
+            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <dt className="text-[11px] font-semibold uppercase text-slate-400">Fornecedor</dt>
+                <dd className="mt-1 text-sm text-slate-700">{equip.fornecedor || 'Não informado'}</dd>
+              </div>
+              <div>
+                <dt className="text-[11px] font-semibold uppercase text-slate-400">Data de aquisição</dt>
+                <dd className="mt-1 text-sm text-slate-700">{formatDateOnly(equip.data_aquisicao)}</dd>
+              </div>
+              <div>
+                <dt className="text-[11px] font-semibold uppercase text-slate-400">Valor de aquisição</dt>
+                <dd className="mt-1 text-sm text-slate-700">
+                  {equip.valor_aquisicao === null || equip.valor_aquisicao === undefined || equip.valor_aquisicao === ''
+                    ? 'Não informado'
+                    : Number(equip.valor_aquisicao).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[11px] font-semibold uppercase text-slate-400">Garantia até</dt>
+                <dd className="mt-1 text-sm text-slate-700">{formatDateOnly(equip.garantia_ate)}</dd>
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3">
+                <dt className="text-[11px] font-semibold uppercase text-slate-400">Detalhes da garantia</dt>
+                <dd className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{equip.garantia_detalhes || 'Não informado'}</dd>
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3">
+                <dt className="text-[11px] font-semibold uppercase text-slate-400">Especificações</dt>
+                <dd className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{equip.especificacoes || 'Não informado'}</dd>
+              </div>
+            </dl>
+
+            {isAdmin && (
+              <form onSubmit={saveTechnicalData} className="space-y-4 border-t border-slate-100 pt-5">
+                <h4 className="text-xs font-bold text-slate-700">Editar dados técnicos</h4>
+                {technicalError && (
+                  <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                    {technicalError}
+                  </p>
+                )}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <label className="text-xs font-semibold text-slate-700">
+                    Fornecedor
+                    <input
+                      maxLength={160}
+                      value={technicalForm.fornecedor}
+                      onChange={(event) => setTechnicalForm((current) => ({ ...current, fornecedor: event.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-700">
+                    Data de aquisição
+                    <input
+                      type="date"
+                      value={technicalForm.data_aquisicao}
+                      onChange={(event) => setTechnicalForm((current) => ({ ...current, data_aquisicao: event.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-700">
+                    Valor de aquisição (R$)
+                    <input
+                      type="number"
+                      min="0"
+                      max="9999999999.99"
+                      step="0.01"
+                      value={technicalForm.valor_aquisicao}
+                      onChange={(event) => setTechnicalForm((current) => ({ ...current, valor_aquisicao: event.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-700">
+                    Garantia até
+                    <input
+                      type="date"
+                      value={technicalForm.garantia_ate}
+                      onChange={(event) => setTechnicalForm((current) => ({ ...current, garantia_ate: event.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-700 sm:col-span-2">
+                    Detalhes da garantia
+                    <input
+                      maxLength={500}
+                      value={technicalForm.garantia_detalhes}
+                      onChange={(event) => setTechnicalForm((current) => ({ ...current, garantia_detalhes: event.target.value }))}
+                      placeholder="Cobertura, condições ou contato"
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-700 sm:col-span-2 lg:col-span-3">
+                    Especificações
+                    <textarea
+                      maxLength={5000}
+                      rows={4}
+                      value={technicalForm.especificacoes}
+                      onChange={(event) => setTechnicalForm((current) => ({ ...current, especificacoes: event.target.value }))}
+                      placeholder="Características e especificações relevantes"
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal"
+                    />
+                  </label>
+                </div>
+                <button
+                  type="submit"
+                  disabled={savingTechnicalData}
+                  className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+                >
+                  <Save className="h-4 w-4" />
+                  {savingTechnicalData ? 'Salvando...' : 'Salvar dados técnicos'}
+                </button>
+              </form>
+            )}
+          </div>
+        )}
+
         {activeTab === 'documentos' && (
           <div className="space-y-5">
             <div>

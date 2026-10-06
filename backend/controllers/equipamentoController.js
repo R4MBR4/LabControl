@@ -4,6 +4,63 @@ const auditoriaModel = require('../models/auditoriaModel');
 const { pool } = require('../models/dbHelper');
 const QRCode = require('qrcode');
 
+const TECHNICAL_TEXT_LIMITS = {
+  especificacoes: 5000,
+  fornecedor: 160,
+  garantia_detalhes: 500
+};
+
+function validateTechnicalFields(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { error: 'Os dados técnicos informados são inválidos.' };
+  }
+  const fields = {};
+  for (const [field, maxLength] of Object.entries(TECHNICAL_TEXT_LIMITS)) {
+    if (!Object.prototype.hasOwnProperty.call(payload, field)) continue;
+    const value = payload[field];
+    if (value !== null && typeof value !== 'string') {
+      return { error: `O campo ${field} deve ser texto.` };
+    }
+    const normalized = typeof value === 'string' ? value.trim() : '';
+    if (normalized.length > maxLength) {
+      return { error: `O campo ${field} deve conter no máximo ${maxLength} caracteres.` };
+    }
+    fields[field] = normalized || null;
+  }
+
+  for (const field of ['data_aquisicao', 'garantia_ate']) {
+    if (!Object.prototype.hasOwnProperty.call(payload, field)) continue;
+    const value = payload[field];
+    if (value === null || value === '') {
+      fields[field] = null;
+      continue;
+    }
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return { error: `O campo ${field} deve ser uma data válida no formato AAAA-MM-DD.` };
+    }
+    const parsed = new Date(`${value}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+      return { error: `O campo ${field} deve ser uma data válida no formato AAAA-MM-DD.` };
+    }
+    fields[field] = value;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'valor_aquisicao')) {
+    const value = payload.valor_aquisicao;
+    if (value === null || value === '') {
+      fields.valor_aquisicao = null;
+    } else {
+      const amountText = String(value).trim();
+      if (!/^\d{1,10}(?:\.\d{1,2})?$/.test(amountText)) {
+        return { error: 'O valor de aquisição deve ser não negativo e ter no máximo duas casas decimais.' };
+      }
+      fields.valor_aquisicao = Number(amountText).toFixed(2);
+    }
+  }
+
+  return { fields };
+}
+
 async function list(req, res) {
   try {
     const filters = {};
@@ -77,6 +134,11 @@ async function update(req, res) {
   let transactionStarted = false;
 
   try {
+    const technicalFields = validateTechnicalFields(req.body);
+    if (technicalFields.error) {
+      return res.status(400).json({ error: technicalFields.error });
+    }
+    const payload = { ...req.body, ...technicalFields.fields };
     connection = await pool.getConnection();
     await connection.beginTransaction();
     transactionStarted = true;
@@ -86,14 +148,14 @@ async function update(req, res) {
       transactionStarted = false;
       return res.status(404).json({ error: 'Equipamento não encontrado' });
     }
-    const updated = await equipamentoModel.updateEquipamento(req.params.id, req.body, connection);
+    const updated = await equipamentoModel.updateEquipamento(req.params.id, payload, connection);
     if (!updated) {
       await connection.rollback();
       transactionStarted = false;
       return res.status(404).json({ error: 'Equipamento não encontrado' });
     }
     const camposIgnorados = new Set(['foto_url', 'foto', 'imagem', 'image']);
-    const alteracoes = Object.entries(req.body)
+    const alteracoes = Object.entries(payload)
       .filter(([campo]) => !camposIgnorados.has(campo.toLowerCase()))
       .reduce((resultado, [campo, valorNovo]) => {
         const valorAnterior = anterior[campo];
@@ -338,5 +400,6 @@ module.exports = {
   reativar,
   remove,
   getHistorico,
-  getQRCode
+  getQRCode,
+  validateTechnicalFields
 };
