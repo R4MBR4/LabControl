@@ -67,10 +67,38 @@ async function remove(req, res) {
   }
 }
 
+async function getDetalhes(req, res) {
+  try {
+    const detalhes = await espacoModel.getEspacoDetalhes(req.params.id);
+    if (!detalhes) {
+      return res.status(404).json({ error: 'Laboratório/Espaço não encontrado' });
+    }
+    res.json(detalhes);
+  } catch (err) {
+    console.error('[Espaco] Erro ao obter detalhes:', err);
+    res.status(500).json({ error: 'Erro ao carregar detalhes do laboratório' });
+  }
+}
+
+async function getMonitor(req, res) {
+  try {
+    const monitorData = await espacoModel.getEspacoMonitor(req.params.id);
+    if (!monitorData) {
+      return res.status(404).json({ error: 'Laboratório/Espaço não encontrado' });
+    }
+    res.json(monitorData);
+  } catch (err) {
+    console.error('[Espaco] Erro ao obter dados do monitor:', err);
+    res.status(500).json({ error: 'Erro ao carregar dados do modo monitor' });
+  }
+}
+
 module.exports = {
   list,
   getById,
   create,
   update,
-  remove
+  remove,
+  getDetalhes,
+  getMonitor
 };

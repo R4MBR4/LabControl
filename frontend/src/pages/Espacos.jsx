@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import { Building2, Plus, Search, MapPin, Users, Edit, Trash2, X, CheckCircle2 } from 'lucide-react';
+import { Building2, Plus, Search, MapPin, Users, Edit, Trash2, X, CheckCircle2, Eye, Tv, Shield } from 'lucide-react';
 
 export default function Espacos() {
   const { isAdmin } = useAuth();
@@ -16,6 +17,8 @@ export default function Espacos() {
     capacidade: 30,
     localizacao: '',
     descricao: '',
+    responsavel: '',
+    regras_utilizacao: '',
     status: 'disponivel'
   });
   const [error, setError] = useState('');
@@ -46,6 +49,8 @@ export default function Espacos() {
         capacidade: espaco.capacidade || 30,
         localizacao: espaco.localizacao || '',
         descricao: espaco.descricao || '',
+        responsavel: espaco.responsavel || '',
+        regras_utilizacao: espaco.regras_utilizacao || '',
         status: espaco.status || 'disponivel'
       });
     } else {
@@ -56,6 +61,8 @@ export default function Espacos() {
         capacidade: 30,
         localizacao: '',
         descricao: '',
+        responsavel: '',
+        regras_utilizacao: '',
         status: 'disponivel'
       });
     }
@@ -191,6 +198,12 @@ export default function Espacos() {
                   )}
 
                   <div className="space-y-1.5 pt-3 border-t border-slate-100 text-xs text-slate-500">
+                    {esp.responsavel && (
+                      <div className="flex items-center gap-2 text-teal-700 font-medium">
+                        <Shield className="w-3.5 h-3.5 text-teal-600" />
+                        <span>Responsável: {esp.responsavel}</span>
+                      </div>
+                    )}
                     {esp.localizacao && (
                       <div className="flex items-center gap-2">
                         <MapPin className="w-3.5 h-3.5 text-slate-400" />
@@ -204,24 +217,47 @@ export default function Espacos() {
                   </div>
                 </div>
 
-                {isAdmin && (
-                  <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-                    <button
-                      onClick={() => handleOpenModal(esp)}
-                      className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
-                      title="Editar"
+                <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to={`/espacos/${espId}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-teal-50 text-teal-700 hover:bg-teal-100 transition"
+                      title="Ver detalhes completos, inventário e agenda"
                     >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(espId)}
-                      className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                      title="Excluir"
+                      <Eye className="w-3.5 h-3.5" />
+                      Painel Lab
+                    </Link>
+                    <Link
+                      to={`/espacos/${espId}/monitor`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition shadow-xs"
+                      title="Abrir Modo Monitor Kiosk / Painel de Porta"
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                      <Tv className="w-3.5 h-3.5 text-teal-400" />
+                      Monitor
+                    </Link>
                   </div>
-                )}
+
+                  {isAdmin && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleOpenModal(esp)}
+                        className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
+                        title="Editar"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(espId)}
+                        className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                        title="Excluir"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -283,15 +319,27 @@ export default function Espacos() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Localização (Bloco / Sala)</label>
-                <input
-                  type="text"
-                  value={formData.localizacao}
-                  onChange={(e) => setFormData({ ...formData, localizacao: e.target.value })}
-                  placeholder="Ex: Bloco B, 2º Andar, Sala 204"
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Localização (Bloco / Sala)</label>
+                  <input
+                    type="text"
+                    value={formData.localizacao}
+                    onChange={(e) => setFormData({ ...formData, localizacao: e.target.value })}
+                    placeholder="Ex: Bloco B, Sala 204"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Responsável / Docente</label>
+                  <input
+                    type="text"
+                    value={formData.responsavel}
+                    onChange={(e) => setFormData({ ...formData, responsavel: e.target.value })}
+                    placeholder="Ex: Prof. Dr. Silva"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
               </div>
 
               <div>
@@ -310,10 +358,21 @@ export default function Espacos() {
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Descrição / Recursos do Espaço</label>
                 <textarea
-                  rows="3"
+                  rows="2"
                   value={formData.descricao}
                   onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
-                  placeholder="Bancadas de teste com fontes DC, osciloscópios e rede Wi-Fi dedicada..."
+                  placeholder="Bancadas de teste com fontes DC, osciloscópios..."
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                ></textarea>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Regras de Utilização / Segurança</label>
+                <textarea
+                  rows="2"
+                  value={formData.regras_utilizacao}
+                  onChange={(e) => setFormData({ ...formData, regras_utilizacao: e.target.value })}
+                  placeholder="Obrigatório uso de jaleco e óculos de proteção. Proibido alimentos no recinto."
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 ></textarea>
               </div>

@@ -17,6 +17,8 @@ import Consumiveis from './pages/Consumiveis';
 import Capacitacoes from './pages/Capacitacoes';
 import Usuarios from './pages/Usuarios';
 import InventarioQR from './pages/InventarioQR';
+import EspacoDetalhes from './pages/EspacoDetalhes';
+import EspacoMonitor from './pages/EspacoMonitor';
 
 function LayoutWithNavbar() {
   return (
@@ -27,6 +29,7 @@ function LayoutWithNavbar() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/espacos" element={<Espacos />} />
+          <Route path="/espacos/:id" element={<EspacoDetalhes />} />
           <Route path="/equipamentos" element={<Equipamentos />} />
           <Route path="/equipamentos/:id" element={<EquipamentoDetalhes />} />
           <Route path="/reservas" element={<Reservas />} />
@@ -59,7 +62,10 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           
-          {/* Rotas protegidas gerais */}
+          {/* Modo Monitor dedicado para exibição em tablets/TVs */}
+          <Route path="/espacos/:id/monitor" element={<EspacoMonitor />} />
+
+          {/* Rotas protegidas gerais com layout padrão */}
           <Route element={<ProtectedRoute />}>
             <Route path="/*" element={<LayoutWithNavbar />} />
           </Route>

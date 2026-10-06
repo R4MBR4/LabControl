@@ -51,8 +51,11 @@ CREATE TABLE `espaco` (
   `codigo` VARCHAR(50) NOT NULL UNIQUE,
   `capacidade` INT NOT NULL DEFAULT 20,
   `localizacao` VARCHAR(150) NULL,
+  `responsavel` VARCHAR(100) NULL,
   `status` VARCHAR(30) NOT NULL DEFAULT 'disponivel',
   `descricao` TEXT NULL,
+  `foto_url` LONGTEXT NULL,
+  `regras_utilizacao` TEXT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_espaco_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -320,6 +320,60 @@ export function handleMockRequest(method, url, data) {
       saveStorage(db);
       return ok({ message: 'Espaço removido com sucesso' });
     }
+
+    if (cleanUrl.match(/\/espacos\/\d+\/detalhes/)) {
+      const esp = db.espacos.find(e => e.id === id) || db.espacos[0];
+      const equipamentos = db.equipamentos.filter(e => e.espaco_id === id && !e.inativo);
+      const reservas = db.reservas.filter(r => r.espaco_id === id);
+      const utilizacoes = db.utilizacoes.filter(u => equipamentos.some(eq => eq.id === u.equipamento_id) && u.status === 'EM_USO');
+      const reservaAtual = reservas.find(r => r.status === 'em_andamento') || null;
+      const inventarios = (db.inventarios || []).filter(inv => inv.espaco_id === id);
+      return ok({
+        espaco: esp,
+        equipamentos,
+        reservas,
+        utilizacaoAtual: {
+          reservaEmAndamento: reservaAtual,
+          equipamentosEmUso: utilizacoes
+        },
+        inventarios
+      });
+    }
+
+    if (cleanUrl.match(/\/espacos\/\d+\/monitor/)) {
+      const esp = db.espacos.find(e => e.id === id) || db.espacos[0];
+      const equipamentos = db.equipamentos.filter(e => e.espaco_id === id && !e.inativo);
+      const reservas = db.reservas.filter(r => r.espaco_id === id);
+      const reservaAtual = reservas.find(r => r.status === 'em_andamento') || null;
+      const proximas = reservas.filter(r => r.status === 'confirmada').slice(0, 4);
+      const emUso = db.utilizacoes.filter(u => equipamentos.some(eq => eq.id === u.equipamento_id) && u.status === 'EM_USO');
+
+      return ok({
+        espaco: {
+          id: esp.id,
+          nome: esp.nome,
+          codigo: esp.codigo,
+          capacidade: esp.capacidade,
+          localizacao: esp.localizacao,
+          status: esp.status,
+          responsavel: esp.responsavel || 'Prof. Responsável'
+        },
+        ocupacaoAtual: {
+          ocupado: !!reservaAtual || emUso.length > 0,
+          reserva: reservaAtual,
+          equipamentosEmUso: emUso
+        },
+        proximasReservas: proximas,
+        estatisticasEquipamentos: {
+          total: equipamentos.length,
+          disponiveis: equipamentos.filter(e => e.status === 'disponivel').length,
+          em_uso: equipamentos.filter(e => e.status === 'em_uso').length,
+          manutencao: equipamentos.filter(e => e.status === 'manutencao').length
+        },
+        timestampAtualizacao: new Date().toISOString()
+      });
+    }
+
     const item = db.espacos.find(e => e.id === id);
     return ok(item || db.espacos[0]);
   }
