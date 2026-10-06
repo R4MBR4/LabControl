@@ -110,6 +110,9 @@ LabControl/
 8. **Experiência de uso:**
    A busca global na barra superior pesquisa equipamentos, espaços, reservas, ocorrências e consumíveis; administradores também pesquisam manutenções e inventários. Os resultados respeitam as permissões de cada perfil. Erros de carregamento nas principais listas exibem orientação e ação para tentar novamente; a lista de espaços combina busca textual com filtro por status.
 
+9. **Relatórios operacionais:**
+   A página administrativa `/relatorios` reúne relatórios de inventário patrimonial, utilização, reservas, ocorrências, manutenção e posição atual do estoque. Os relatórios históricos aceitam filtros de período e situação; todos permitem exportar para CSV os registros correspondentes ao recorte aplicado. Os dados são consultados nas APIs existentes, sem tabelas adicionais.
+
 ---
 
 ## 🚀 Como Executar o Projeto

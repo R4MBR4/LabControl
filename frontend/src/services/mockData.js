@@ -845,6 +845,25 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
   }
 
   // 6. UTILIZAÇÕES (CHECK-IN / CHECK-OUT)
+  if (cleanUrl === '/utilizacoes' && method.toUpperCase() === 'GET') {
+    const currentUser = JSON.parse(localStorage.getItem('labcontrol_user') || 'null');
+    const userRole = String(currentUser?.perfil || '').toLowerCase();
+    const isAdmin = userRole === 'admin' || userRole === 'administrador';
+    let utilizacoes = db.utilizacoes || [];
+
+    if (!isAdmin && currentUser?.id) {
+      utilizacoes = utilizacoes.filter((item) => Number(item.usuario_id) === Number(currentUser.id));
+    } else if (isAdmin && requestParams.usuario_id) {
+      utilizacoes = utilizacoes.filter((item) => Number(item.usuario_id) === Number(requestParams.usuario_id));
+    }
+    if (requestParams.equipamento_id) {
+      utilizacoes = utilizacoes.filter((item) => Number(item.equipamento_id) === Number(requestParams.equipamento_id));
+    }
+    if (requestParams.status) {
+      utilizacoes = utilizacoes.filter((item) => String(item.status || '').toLowerCase() === String(requestParams.status).toLowerCase());
+    }
+    return ok(utilizacoes);
+  }
   if (cleanUrl === '/utilizacoes/ativas') {
     return ok(db.utilizacoes.filter(u => u.status === 'EM_USO'));
   }

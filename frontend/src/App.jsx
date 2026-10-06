@@ -19,6 +19,7 @@ import Usuarios from './pages/Usuarios';
 import InventarioQR from './pages/InventarioQR';
 import EspacoDetalhes from './pages/EspacoDetalhes';
 import EspacoMonitor from './pages/EspacoMonitor';
+import Relatorios from './pages/Relatorios';
 
 function LayoutWithNavbar() {
   return (
@@ -41,6 +42,7 @@ function LayoutWithNavbar() {
 
           {/* Rotas exclusivas do Administrador */}
           <Route element={<ProtectedRoute adminOnly={true} />}>
+            <Route path="/relatorios" element={<Relatorios />} />
             <Route path="/manutencao" element={<Manutencao />} />
             <Route path="/usuarios" element={<Usuarios />} />
           </Route>

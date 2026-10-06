@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   User as UserIcon,
   ClipboardCheck,
+  FileBarChart2,
   Search
 } from 'lucide-react';
 import BuscaGlobal from './BuscaGlobal';
@@ -47,6 +48,7 @@ export default function Navbar() {
 
   if (isAdmin) {
     navLinks.push({ name: 'Inventário QR', path: '/inventario', icon: ClipboardCheck });
+    navLinks.push({ name: 'Relatórios', path: '/relatorios', icon: FileBarChart2 });
     navLinks.push({ name: 'Manutenção', path: '/manutencao', icon: Wrench });
     navLinks.push({ name: 'Usuários', path: '/usuarios', icon: Users });
   }
