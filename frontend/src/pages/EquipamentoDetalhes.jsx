@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import QRCodeModal from '../components/QRCodeModal';
 import {
   Cpu,
@@ -23,7 +24,11 @@ import {
   Activity,
   Camera,
   Eye,
-  X
+  X,
+  FileText,
+  ExternalLink,
+  Plus,
+  Trash2
 } from 'lucide-react';
 
 const AUDIT_ACTION_LABELS = {
@@ -35,6 +40,8 @@ const AUDIT_ACTION_LABELS = {
   equipamento_reativado: 'Equipamento reativado',
   equipamento_inativado_por_exclusao: 'Equipamento inativado para preservar o histórico',
   equipamento_excluido_sem_historico: 'Equipamento removido sem histórico associado',
+  documento_tecnico_adicionado: 'Documento técnico associado',
+  documento_tecnico_removido: 'Documento técnico removido',
   inventario_divergencia_detectada: 'Divergência de localização detectada no inventário',
   inventario_divergencia_decidida: 'Decisão administrativa sobre divergência de inventário',
   equipamento_nao_localizado_em_inventario: 'Equipamento não localizado no inventário',
@@ -119,12 +126,16 @@ function buildEquipmentTimeline(data) {
 
 export default function EquipamentoDetalhes() {
   const { id } = useParams();
+  const { isAdmin } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState('');
   const [activeTab, setActiveTab] = useState('utilizacoes');
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
+  const [documentForm, setDocumentForm] = useState({ titulo: '', tipo: 'manual', url: '', descricao: '' });
+  const [documentError, setDocumentError] = useState('');
+  const [savingDocument, setSavingDocument] = useState(false);
 
   useEffect(() => {
     async function loadHistorico() {
@@ -144,6 +155,43 @@ export default function EquipamentoDetalhes() {
     }
     loadHistorico();
   }, [id]);
+
+  const addTechnicalDocument = async (event) => {
+    event.preventDefault();
+    setDocumentError('');
+    setSavingDocument(true);
+    try {
+      const response = await api.post(`/equipamentos/${id}/documentos`, documentForm);
+      setData((current) => ({
+        ...current,
+        documentos: [response.data, ...(current.documentos || []).filter((item) => item.id !== response.data.id)]
+      }));
+      setDocumentForm({ titulo: '', tipo: 'manual', url: '', descricao: '' });
+    } catch (error) {
+      console.error('[EquipamentoDetalhes] Erro ao associar documento:', error);
+      setDocumentError(error.response?.data?.error || 'Não foi possível associar o documento técnico.');
+    } finally {
+      setSavingDocument(false);
+    }
+  };
+
+  const removeTechnicalDocument = async (documento) => {
+    if (!window.confirm(`Remover o documento "${documento.titulo}" deste equipamento?`)) return;
+    setDocumentError('');
+    setSavingDocument(true);
+    try {
+      await api.delete(`/equipamentos/${id}/documentos/${documento.id}`);
+      setData((current) => ({
+        ...current,
+        documentos: (current.documentos || []).filter((item) => item.id !== documento.id)
+      }));
+    } catch (error) {
+      console.error('[EquipamentoDetalhes] Erro ao remover documento:', error);
+      setDocumentError(error.response?.data?.error || 'Não foi possível remover o documento técnico.');
+    } finally {
+      setSavingDocument(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -279,6 +327,7 @@ export default function EquipamentoDetalhes() {
 
             <h1 className="text-xl font-bold text-slate-900">{equip.nome}</h1>
 
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Dados técnicos cadastrados</p>
             <div className="flex flex-wrap gap-y-1 gap-x-4 text-xs text-slate-500">
               {equip.marca && <span><strong>Marca:</strong> {equip.marca}</span>}
               {equip.modelo && <span><strong>Modelo:</strong> {equip.modelo}</span>}
@@ -323,6 +372,18 @@ export default function EquipamentoDetalhes() {
       {/* Navegação de Abas do Histórico Unificado */}
       <div className="overflow-x-auto border-b border-slate-200">
         <nav className="flex min-w-max space-x-6 text-xs font-semibold">
+          <button
+            onClick={() => setActiveTab('documentos')}
+            className={`pb-3 border-b-2 transition flex items-center gap-2 ${
+              activeTab === 'documentos'
+                ? 'border-teal-600 text-teal-700 font-bold'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>Documentos ({data.documentos?.length || 0})</span>
+          </button>
+
           <button
             onClick={() => setActiveTab('utilizacoes')}
             className={`pb-3 border-b-2 transition flex items-center gap-2 ${
@@ -375,6 +436,127 @@ export default function EquipamentoDetalhes() {
 
       {/* Conteúdo da Aba Ativa */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+        {activeTab === 'documentos' && (
+          <div className="space-y-5">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">Documentação técnica</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Manuais, fichas técnicas e outros documentos associados a este equipamento.
+              </p>
+            </div>
+
+            {documentError && (
+              <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                {documentError}
+              </p>
+            )}
+
+            {isAdmin && (
+              <form onSubmit={addTechnicalDocument} className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
+                <label className="text-xs font-semibold text-slate-700">
+                  Título
+                  <input
+                    required
+                    maxLength={160}
+                    value={documentForm.titulo}
+                    onChange={(event) => setDocumentForm((current) => ({ ...current, titulo: event.target.value }))}
+                    placeholder="Ex.: Manual de operação"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal"
+                  />
+                </label>
+                <label className="text-xs font-semibold text-slate-700">
+                  Tipo
+                  <select
+                    value={documentForm.tipo}
+                    onChange={(event) => setDocumentForm((current) => ({ ...current, tipo: event.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal"
+                  >
+                    <option value="manual">Manual</option>
+                    <option value="ficha_tecnica">Ficha técnica</option>
+                    <option value="especificacao">Especificação</option>
+                    <option value="documentacao">Documentação</option>
+                    <option value="outro">Outro</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-700 sm:col-span-2">
+                  URL do documento
+                  <input
+                    required
+                    type="url"
+                    maxLength={2048}
+                    value={documentForm.url}
+                    onChange={(event) => setDocumentForm((current) => ({ ...current, url: event.target.value }))}
+                    placeholder="https://..."
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal"
+                  />
+                </label>
+                <label className="text-xs font-semibold text-slate-700 sm:col-span-2">
+                  Descrição (opcional)
+                  <input
+                    maxLength={500}
+                    value={documentForm.descricao}
+                    onChange={(event) => setDocumentForm((current) => ({ ...current, descricao: event.target.value }))}
+                    placeholder="Observações sobre a versão ou conteúdo do documento"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal"
+                  />
+                </label>
+                <div className="sm:col-span-2">
+                  <button
+                    type="submit"
+                    disabled={savingDocument}
+                    className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Associar documento
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {!data.documentos?.length ? (
+              <p className="py-8 text-center text-xs text-slate-400">Nenhum documento técnico associado.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {data.documentos.map((documento) => (
+                  <li key={documento.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <FileText className="mt-0.5 h-4 w-4 shrink-0 text-teal-600" />
+                      <div className="min-w-0">
+                        <a
+                          href={documento.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-sm font-semibold text-teal-800 hover:text-teal-600"
+                        >
+                          <span className="break-words">{documento.titulo}</span>
+                          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                        </a>
+                        <p className="mt-1 text-[11px] font-medium text-slate-500">
+                          {({ manual: 'Manual', ficha_tecnica: 'Ficha técnica', especificacao: 'Especificação', documentacao: 'Documentação', outro: 'Outro' })[documento.tipo] || documento.tipo}
+                          {documento.criado_em && ` · Adicionado em ${new Date(documento.criado_em).toLocaleDateString('pt-BR')}`}
+                        </p>
+                        {documento.descricao && <p className="mt-1 text-xs text-slate-600">{documento.descricao}</p>}
+                      </div>
+                    </div>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        disabled={savingDocument}
+                        onClick={() => removeTechnicalDocument(documento)}
+                        aria-label={`Remover ${documento.titulo}`}
+                        title="Remover documento"
+                        className="self-end rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 sm:self-auto"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         {/* Aba 1: Utilizações */}
         {activeTab === 'utilizacoes' && (
           <div className="space-y-4">

@@ -5,8 +5,8 @@ O **LabControl** é um sistema web full-stack desenvolvido para controle, agenda
 > ⚠️ **Importante sobre o Banco de Dados:**
 > Este sistema foi desenvolvido para **consumir o banco de dados MySQL existente** (`labcontrol`) via variáveis de ambiente.
 > Scripts SQL de schema e evolução estão em `database/`. Eles não são executados automaticamente pelo servidor. `database/schema.sql` recria as tabelas-base e contém comandos `DROP`; **não o execute sobre uma base com dados que devam ser preservados**.
-> Para uma base existente, aplique as migrações necessárias de forma controlada. A tolerância de no-show requer `database/migrations/07_configuracao_no_show.sql`; o vínculo entre ordens de manutenção e ocorrências requer `database/migrations/08_vinculo_ocorrencia_manutencao.sql`; a trilha de auditoria requer `database/migrations/09_historico_auditoria.sql`; as notificações internas requerem `database/migrations/10_notificacoes_internas.sql`.
-> Tabelas consumidas: `usuario` · `espaco` · `equipamento` · `reserva` · `utilizacao` · `ocorrencia` · `manutencao` · `consumivel` · `capacitacao` · `inventario` · `inventario_item` · `configuracao_sistema` · `auditoria_evento` · `notificacao`
+> Para uma base existente, aplique as migrações necessárias de forma controlada. A tolerância de no-show requer `database/migrations/07_configuracao_no_show.sql`; o vínculo entre ordens de manutenção e ocorrências requer `database/migrations/08_vinculo_ocorrencia_manutencao.sql`; a trilha de auditoria requer `database/migrations/09_historico_auditoria.sql`; as notificações internas requerem `database/migrations/10_notificacoes_internas.sql`; os documentos técnicos requerem `database/migrations/11_documentos_tecnicos.sql`.
+> Tabelas consumidas: `usuario` · `espaco` · `equipamento` · `equipamento_documento` · `reserva` · `utilizacao` · `ocorrencia` · `manutencao` · `consumivel` · `capacitacao` · `inventario` · `inventario_item` · `configuracao_sistema` · `auditoria_evento` · `notificacao`
 
 ---
 
@@ -121,6 +121,9 @@ LabControl/
 
 12. **PWA (cache do aplicativo):**
    A aplicação pode ser instalada em navegadores compatíveis e mantém o shell frontend disponível após um primeiro carregamento online, usando o manifesto e o service worker em `frontend/public/`. As chamadas à API não são armazenadas em cache; operações offline e sincronização serão tratadas na Fase 15.
+
+13. **Dados técnicos e documentos:**
+   Os detalhes do equipamento apresentam os dados técnicos cadastrados (categoria, marca, modelo, número de série, localização e observações) e uma aba de documentos vinculados por título, tipo, URL e descrição opcional. Usuários autenticados podem consultar e abrir os links; somente administradores podem associar ou remover registros. Os arquivos continuam hospedados na origem indicada pelo link; a tabela separada `equipamento_documento` permite acrescentar armazenamento de arquivos futuramente.
 
 ---
 

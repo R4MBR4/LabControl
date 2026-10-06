@@ -24,6 +24,10 @@ const initialData = {
     { id: 5, nome: 'Microscópio Óptico Binocular Nikon', codigo_patrimonio: 'PAT-2024-005', patrimonio_ufpi: 'UFPI-PAT-005', codigo_labcontrol: 'LC-EQ-0005', espaco_id: 4, espaco_nome: 'Laboratório de Química Analítica', status: 'manutencao', inativo: 0, categoria: 'Óptica', marca: 'Nikon', modelo: 'Eclipse E100', numero_serie: 'NK-88219', localizacao_detalhada: 'Bancada Central de Óptica' },
     { id: 6, nome: 'Estação de Solda Digital AFR 936', codigo_patrimonio: 'PAT-2024-006', patrimonio_ufpi: 'UFPI-PAT-006', codigo_labcontrol: 'LC-EQ-0006', espaco_id: 2, espaco_nome: 'Espaço Maker & Prototipagem (FabLab)', status: 'disponivel', inativo: 0, categoria: 'Eletrônica', marca: 'AFR', modelo: 'AFR 936 ESD', numero_serie: 'AFR-7721', localizacao_detalhada: 'Bancada de Montagem Rápida' }
   ],
+  documentos_tecnicos: [
+    { id: 1, equipamento_id: 1, titulo: 'Central de manuais Creality', tipo: 'manual', url: 'https://www.creality.com/pages/download', descricao: 'Portal oficial para localizar manuais e arquivos do modelo.', criado_em: new Date().toISOString(), criado_por_usuario_id: 1, criado_por_nome: 'Administrador Demo' },
+    { id: 2, equipamento_id: 3, titulo: 'Página técnica da série TBS1000B', tipo: 'ficha_tecnica', url: 'https://www.tek.com/en/products/oscilloscopes/tbs1000b', descricao: 'Especificações e informações da linha de osciloscópios.', criado_em: new Date().toISOString(), criado_por_usuario_id: 1, criado_por_nome: 'Administrador Demo' }
+  ],
   reservas: [
     {
       id: 1,
@@ -214,7 +218,11 @@ function getStorage() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(initialData));
       return JSON.parse(JSON.stringify(initialData));
     }
-    return JSON.parse(raw);
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data.documentos_tecnicos)) {
+      data.documentos_tecnicos = JSON.parse(JSON.stringify(initialData.documentos_tecnicos));
+    }
+    return data;
   } catch (e) {
     return initialData;
   }
@@ -690,13 +698,79 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
       return ok({ message: 'Equipamento reativado com sucesso', equipamento: db.equipamentos[idx] });
     }
   }
+  const technicalDocumentsRoute = cleanUrl.match(/^\/equipamentos\/(\d+)\/documentos(?:\/(\d+))?$/);
+  if (technicalDocumentsRoute) {
+    const equipamentoId = Number(technicalDocumentsRoute[1]);
+    const documentoId = technicalDocumentsRoute[2] ? Number(technicalDocumentsRoute[2]) : null;
+    const isAdmin = ['admin', 'administrador'].includes(String(currentUser?.perfil || '').toLowerCase());
+    db.documentos_tecnicos = db.documentos_tecnicos || [];
+    if (!db.equipamentos.some((item) => Number(item.id) === equipamentoId)) {
+      return { data: { error: 'Equipamento não encontrado.' }, status: 404, statusText: 'Not Found' };
+    }
+
+    if (method.toUpperCase() === 'GET' && !documentoId) {
+      return ok(db.documentos_tecnicos.filter((item) => Number(item.equipamento_id) === equipamentoId));
+    }
+    if ((method.toUpperCase() === 'POST' || method.toUpperCase() === 'DELETE') && !isAdmin) {
+      return { data: { error: 'Acesso permitido apenas para administradores.' }, status: 403, statusText: 'Forbidden' };
+    }
+    if (method.toUpperCase() === 'POST' && !documentoId) {
+      const title = String(data?.titulo || '').trim();
+      const url = String(data?.url || '').trim();
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(url);
+      } catch {
+        return { data: { error: 'Informe uma URL HTTP ou HTTPS válida.' }, status: 400, statusText: 'Bad Request' };
+      }
+      const validTypes = ['manual', 'ficha_tecnica', 'especificacao', 'documentacao', 'outro'];
+      if (!title || title.length > 160 || !validTypes.includes(data?.tipo) ||
+        !['http:', 'https:'].includes(parsedUrl.protocol) || parsedUrl.username || parsedUrl.password ||
+        url.length > 2048 || String(data?.descricao || '').length > 500) {
+        return { data: { error: 'Revise os dados do documento técnico.' }, status: 400, statusText: 'Bad Request' };
+      }
+      const [user] = (db.usuarios || []).filter((item) => Number(item.id) === Number(currentUser?.id));
+      const document = {
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        equipamento_id: equipamentoId,
+        titulo: title,
+        tipo: data.tipo,
+        url,
+        descricao: String(data.descricao || '').trim(),
+        criado_em: new Date().toISOString(),
+        criado_por_usuario_id: Number(currentUser?.id),
+        criado_por_nome: user?.nome || currentUser?.nome || ''
+      };
+      db.documentos_tecnicos.unshift(document);
+      saveStorage(db);
+      return ok(document);
+    }
+    if (method.toUpperCase() === 'DELETE' && documentoId) {
+      const found = db.documentos_tecnicos.some((item) => (
+        Number(item.id) === documentoId && Number(item.equipamento_id) === equipamentoId
+      ));
+      if (!found) return { data: { error: 'Documento técnico não encontrado.' }, status: 404, statusText: 'Not Found' };
+      db.documentos_tecnicos = db.documentos_tecnicos.filter((item) => (
+        !(Number(item.id) === documentoId && Number(item.equipamento_id) === equipamentoId)
+      ));
+      saveStorage(db);
+      return ok({ message: 'Documento técnico removido.' });
+    }
+  }
   if (cleanUrl.match(/\/equipamentos\/\d+\/historico/)) {
     const id = Number(cleanUrl.split('/')[2]);
     const equip = db.equipamentos.find(e => e.id === id) || db.equipamentos[0];
     const utilizacoes = db.utilizacoes.filter(u => u.equipamento_id === id);
     const ocorrencias = db.ocorrencias.filter(o => o.equipamento_id === id);
     const manutencoes = db.manutencoes.filter(m => m.equipamento_id === id);
-    return ok({ equipamento: equip, utilizacoes, ocorrencias, manutencoes, auditoria: [] });
+    return ok({
+      equipamento: equip,
+      utilizacoes,
+      ocorrencias,
+      manutencoes,
+      auditoria: [],
+      documentos: (db.documentos_tecnicos || []).filter((item) => Number(item.equipamento_id) === id)
+    });
   }
   if (cleanUrl.startsWith('/equipamentos/')) {
     const id = Number(cleanUrl.split('/')[2]);

@@ -1,4 +1,5 @@
 const equipamentoModel = require('../models/equipamentoModel');
+const documentoTecnicoModel = require('../models/documentoTecnicoModel');
 const auditoriaModel = require('../models/auditoriaModel');
 const { pool } = require('../models/dbHelper');
 const QRCode = require('qrcode');
@@ -269,10 +270,12 @@ async function getHistorico(req, res) {
     }
     const historico = await equipamentoModel.getEquipamentoHistorico(req.params.id);
     const auditoria = await auditoriaModel.listarEventosEquipamento(req.params.id);
+    const documentos = await documentoTecnicoModel.listByEquipamento(req.params.id);
     res.json({
       equipamento: equip,
       ...historico,
-      auditoria
+      auditoria,
+      documentos
     });
   } catch (err) {
     console.error('[Equipamento] Erro ao obter histórico:', err.message);
