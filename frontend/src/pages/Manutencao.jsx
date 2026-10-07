@@ -87,7 +87,7 @@ export default function Manutencao() {
   const handleOpenConcluir = (m) => {
     setSelectedManutencao(m);
     setConcluirForm({
-      laudo_tecnico: 'Equipamento testado, calibrado e operacional para retorno às atividades.',
+      laudo_tecnico: '',
       custo: m.custo || 0
     });
     setError('');
@@ -99,8 +99,10 @@ export default function Manutencao() {
     setError('');
     try {
       const mId = selectedManutencao.id || selectedManutencao.id_manutencao;
-      await api.patch(`/manutencoes/${mId}/concluir`, concluirForm);
-      setSuccess('Manutenção concluída! Equipamento desbloqueado e retornado ao status disponível com sucesso.');
+      const response = await api.patch(`/manutencoes/${mId}/concluir`, concluirForm);
+      setSuccess(response.data.equipamento_liberado
+        ? 'Manutenção concluída! Equipamento liberado para operação.'
+        : 'Manutenção concluída. O equipamento permanece bloqueado por outra ordem aberta ou por estar inativo.');
       setModalConcluirOpen(false);
       loadData();
       setTimeout(() => setSuccess(''), 5000);
@@ -148,7 +150,8 @@ export default function Manutencao() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {manutencoes.map((m) => {
             const mId = m.id || m.id_manutencao;
-            const isConcluida = (m.status || '').toLowerCase() === 'concluida';
+            const normalizedStatus = (m.status || '').toLowerCase();
+            const isConcluida = ['concluida', 'concluído', 'concluido', 'cancelada', 'cancelado'].includes(normalizedStatus);
 
             return (
               <div
@@ -187,6 +190,11 @@ export default function Manutencao() {
                       <strong className="text-slate-900">Tipo:</strong> {m.tipo ? m.tipo.toUpperCase() : 'CORRETIVA'}
                     </p>
                     <p className="text-slate-600">{m.descricao}</p>
+                    {m.ocorrencia_id && (
+                      <p className="text-[11px] text-purple-700">
+                        Ocorrência vinculada: #{m.ocorrencia_id}{m.ocorrencia_titulo ? ` · ${m.ocorrencia_titulo}` : ''}
+                      </p>
+                    )}
                     {m.observacoes && (
                       <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-slate-600 text-[11px]">
                         <strong>Laudo / Devolução:</strong> {m.observacoes}
@@ -217,7 +225,7 @@ export default function Manutencao() {
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition"
                     >
                       <CheckCircle2 className="w-4 h-4" />
-                      Concluir e Liberar Equipamento
+                      Concluir Manutenção
                     </button>
                   </div>
                 )}
@@ -345,7 +353,7 @@ export default function Manutencao() {
             </div>
 
             <p className="text-xs text-emerald-800 bg-emerald-50 p-3 rounded-xl border border-emerald-200 mb-4">
-              Ao confirmar a conclusão, o equipamento será imediatamente retornado ao status <strong>"disponivel"</strong> para agendamentos e utilizações.
+              O equipamento só será liberado se não houver outra ordem de manutenção em aberto e se não estiver inativo.
             </p>
 
             <form onSubmit={handleConcluirSubmit} className="space-y-4">
@@ -368,6 +376,7 @@ export default function Manutencao() {
                   required
                   value={concluirForm.laudo_tecnico}
                   onChange={(e) => setConcluirForm({ ...concluirForm, laudo_tecnico: e.target.value })}
+                  placeholder="Informe os serviços executados, testes realizados e condição final do equipamento."
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                 ></textarea>
               </div>

@@ -13,10 +13,13 @@ async function getAllOcorrencias(filters = {}) {
   let sql = `
     SELECT o.*,
            u.nome AS usuario_nome, u.email AS usuario_email,
-           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo
+           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo,
+           e.codigo_labcontrol AS equipamento_labcontrol, e.patrimonio_ufpi AS equipamento_patrimonio_ufpi,
+           esp.nome AS espaco_nome
     FROM \`${TABLE}\` o
     LEFT JOIN \`usuario\` u ON o.\`${fkUser}\` = u.\`${userPk}\`
     LEFT JOIN \`equipamento\` e ON o.\`${fkEquip}\` = e.\`${equipPk}\`
+    LEFT JOIN \`espaco\` esp ON o.espaco_id = esp.id
   `;
 
   const whereClauses = [];
@@ -45,7 +48,7 @@ async function getAllOcorrencias(filters = {}) {
   return rows;
 }
 
-async function getOcorrenciaById(id) {
+async function getOcorrenciaById(id, executor = pool, lock = false) {
   const pk = await getPrimaryKey(TABLE);
   const userPk = await getPrimaryKey('usuario');
   const equipPk = await getPrimaryKey('equipamento');
@@ -56,18 +59,22 @@ async function getOcorrenciaById(id) {
   const sql = `
     SELECT o.*,
            u.nome AS usuario_nome, u.email AS usuario_email,
-           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo
+           e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo,
+           e.codigo_labcontrol AS equipamento_labcontrol, e.patrimonio_ufpi AS equipamento_patrimonio_ufpi,
+           esp.nome AS espaco_nome
     FROM \`${TABLE}\` o
     LEFT JOIN \`usuario\` u ON o.\`${fkUser}\` = u.\`${userPk}\`
     LEFT JOIN \`equipamento\` e ON o.\`${fkEquip}\` = e.\`${equipPk}\`
+    LEFT JOIN \`espaco\` esp ON o.espaco_id = esp.id
     WHERE o.\`${pk}\` = ?
     LIMIT 1
+    ${lock ? 'FOR UPDATE' : ''}
   `;
-  const [rows] = await pool.query(sql, [id]);
+  const [rows] = await executor.query(sql, [id]);
   return rows[0] || null;
 }
 
-async function createOcorrencia(data) {
+async function createOcorrencia(data, executor = pool) {
   const cols = await getTableColumns(TABLE);
   const payload = { ...data };
 
@@ -80,13 +87,13 @@ async function createOcorrencia(data) {
     payload.status = 'aberta';
   }
 
-  const id = await insert(TABLE, payload);
-  return getOcorrenciaById(id);
+  const id = await insert(TABLE, payload, executor);
+  return getOcorrenciaById(id, executor);
 }
 
-async function updateOcorrencia(id, data) {
-  await update(TABLE, id, data);
-  return getOcorrenciaById(id);
+async function updateOcorrencia(id, data, executor = pool) {
+  await update(TABLE, id, data, executor);
+  return getOcorrenciaById(id, executor);
 }
 
 async function deleteOcorrencia(id) {

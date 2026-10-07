@@ -6,7 +6,22 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test:inventario-divergencia": "node teste-inventario-divergencia.js",
+    "test:no-show-automatic": "node teste-no-show-automatic.js",
+    "test:sugestoes-reserva": "node teste-sugestoes-reserva.js",
+    "test:categorias-importacao": "node teste-categorias-importacao.js",
+    "test:historico-consumiveis": "node teste-historico-consumiveis.js",
+    "test:calendario-reservas": "node teste-calendario-reservas.js",
+    "test:relatorios": "node teste-relatorios.js",
+    "test:notificacoes": "node teste-notificacoes-internas.js",
+    "test:dados-tecnicos": "node teste-dados-tecnicos.js",
+    "test:seguranca-auth": "node teste-seguranca-autenticacao.js",
+    "test:sessao-autorizacao": "node teste-sessao-autorizacao.js",
+    "test:acesso-capacitacoes": "node teste-acesso-capacitacoes.js",
+    "test:integracao-acesso-capacitacoes": "node teste-integracao-acesso-capacitacoes.js",
+    "test:acesso-registros-usuario": "node teste-acesso-registros-usuario.js",
+    "test:visualizador-tabelas-auth": "node teste-visualizador-tabelas-auth.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

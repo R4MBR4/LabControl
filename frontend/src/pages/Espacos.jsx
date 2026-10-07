@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import { Building2, Plus, Search, MapPin, Users, Edit, Trash2, X, CheckCircle2 } from 'lucide-react';
+import LoadError from '../components/LoadError';
+import { Building2, Plus, Search, MapPin, Users, Edit, Trash2, X, CheckCircle2, Eye, Tv, Shield } from 'lucide-react';
 
 export default function Espacos() {
   const { isAdmin } = useAuth();
   const [espacos, setEspacos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('todos');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEspaco, setEditingEspaco] = useState(null);
   const [formData, setFormData] = useState({
@@ -16,6 +20,8 @@ export default function Espacos() {
     capacidade: 30,
     localizacao: '',
     descricao: '',
+    responsavel: '',
+    regras_utilizacao: '',
     status: 'disponivel'
   });
   const [error, setError] = useState('');
@@ -24,10 +30,12 @@ export default function Espacos() {
   const loadEspacos = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const res = await api.get('/espacos');
       setEspacos(res.data);
     } catch (err) {
       console.error('[Espacos] Erro:', err);
+      setLoadError(err.response?.data?.error || 'Verifique a conexão e tente carregar novamente.');
     } finally {
       setLoading(false);
     }
@@ -46,6 +54,8 @@ export default function Espacos() {
         capacidade: espaco.capacidade || 30,
         localizacao: espaco.localizacao || '',
         descricao: espaco.descricao || '',
+        responsavel: espaco.responsavel || '',
+        regras_utilizacao: espaco.regras_utilizacao || '',
         status: espaco.status || 'disponivel'
       });
     } else {
@@ -56,6 +66,8 @@ export default function Espacos() {
         capacidade: 30,
         localizacao: '',
         descricao: '',
+        responsavel: '',
+        regras_utilizacao: '',
         status: 'disponivel'
       });
     }
@@ -101,9 +113,13 @@ export default function Espacos() {
   };
 
   const filtered = espacos.filter(e =>
-    e.nome?.toLowerCase().includes(search.toLowerCase()) ||
-    e.localizacao?.toLowerCase().includes(search.toLowerCase()) ||
-    e.tipo?.toLowerCase().includes(search.toLowerCase())
+    (statusFilter === 'todos' || String(e.status || 'disponivel').toLowerCase() === statusFilter) &&
+    (
+      e.nome?.toLowerCase().includes(search.toLowerCase()) ||
+      e.codigo?.toLowerCase().includes(search.toLowerCase()) ||
+      e.localizacao?.toLowerCase().includes(search.toLowerCase()) ||
+      e.tipo?.toLowerCase().includes(search.toLowerCase())
+    )
   );
 
   return (
@@ -134,17 +150,31 @@ export default function Espacos() {
           <span>{success}</span>
         </div>
       )}
+      <LoadError message={loadError} onRetry={loadEspacos} />
 
       {/* Busca */}
-      <div className="relative max-w-md">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-        <input
-          type="text"
-          placeholder="Buscar por nome, tipo ou localização..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition"
-        />
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="relative w-full max-w-md">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="search"
+            placeholder="Buscar por nome, código ou localização..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition"
+          />
+        </div>
+        <select
+          aria-label="Filtrar espaços por status"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-700 sm:w-auto"
+        >
+          <option value="todos">Todos os status</option>
+          <option value="disponivel">Disponível</option>
+          <option value="manutencao">Em manutenção</option>
+          <option value="inativo">Inativo</option>
+        </select>
       </div>
 
       {/* Grid de Espaços */}
@@ -152,9 +182,11 @@ export default function Espacos() {
         <div className="py-12 flex justify-center">
           <div className="w-8 h-8 border-3 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : loadError ? null : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-400 text-sm">
-          Nenhum espaço encontrado no momento.
+          {search || statusFilter !== 'todos'
+            ? 'Nenhum espaço corresponde aos filtros selecionados. Ajuste a busca ou o status.'
+            : 'Nenhum espaço cadastrado no momento.'}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -191,6 +223,12 @@ export default function Espacos() {
                   )}
 
                   <div className="space-y-1.5 pt-3 border-t border-slate-100 text-xs text-slate-500">
+                    {esp.responsavel && (
+                      <div className="flex items-center gap-2 text-teal-700 font-medium">
+                        <Shield className="w-3.5 h-3.5 text-teal-600" />
+                        <span>Responsável: {esp.responsavel}</span>
+                      </div>
+                    )}
                     {esp.localizacao && (
                       <div className="flex items-center gap-2">
                         <MapPin className="w-3.5 h-3.5 text-slate-400" />
@@ -204,24 +242,47 @@ export default function Espacos() {
                   </div>
                 </div>
 
-                {isAdmin && (
-                  <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-                    <button
-                      onClick={() => handleOpenModal(esp)}
-                      className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
-                      title="Editar"
+                <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to={`/espacos/${espId}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-teal-50 text-teal-700 hover:bg-teal-100 transition"
+                      title="Ver detalhes completos, inventário e agenda"
                     >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(espId)}
-                      className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                      title="Excluir"
+                      <Eye className="w-3.5 h-3.5" />
+                      Painel Lab
+                    </Link>
+                    <Link
+                      to={`/espacos/${espId}/monitor`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition shadow-xs"
+                      title="Abrir Modo Monitor Kiosk / Painel de Porta"
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                      <Tv className="w-3.5 h-3.5 text-teal-400" />
+                      Monitor
+                    </Link>
                   </div>
-                )}
+
+                  {isAdmin && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleOpenModal(esp)}
+                        className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
+                        title="Editar"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(espId)}
+                        className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                        title="Excluir"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -283,15 +344,27 @@ export default function Espacos() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Localização (Bloco / Sala)</label>
-                <input
-                  type="text"
-                  value={formData.localizacao}
-                  onChange={(e) => setFormData({ ...formData, localizacao: e.target.value })}
-                  placeholder="Ex: Bloco B, 2º Andar, Sala 204"
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Localização (Bloco / Sala)</label>
+                  <input
+                    type="text"
+                    value={formData.localizacao}
+                    onChange={(e) => setFormData({ ...formData, localizacao: e.target.value })}
+                    placeholder="Ex: Bloco B, Sala 204"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Responsável / Docente</label>
+                  <input
+                    type="text"
+                    value={formData.responsavel}
+                    onChange={(e) => setFormData({ ...formData, responsavel: e.target.value })}
+                    placeholder="Ex: Prof. Dr. Silva"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
               </div>
 
               <div>
@@ -310,10 +383,21 @@ export default function Espacos() {
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Descrição / Recursos do Espaço</label>
                 <textarea
-                  rows="3"
+                  rows="2"
                   value={formData.descricao}
                   onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
-                  placeholder="Bancadas de teste com fontes DC, osciloscópios e rede Wi-Fi dedicada..."
+                  placeholder="Bancadas de teste com fontes DC, osciloscópios..."
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                ></textarea>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Regras de Utilização / Segurança</label>
+                <textarea
+                  rows="2"
+                  value={formData.regras_utilizacao}
+                  onChange={(e) => setFormData({ ...formData, regras_utilizacao: e.target.value })}
+                  placeholder="Obrigatório uso de jaleco e óculos de proteção. Proibido alimentos no recinto."
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 ></textarea>
               </div>

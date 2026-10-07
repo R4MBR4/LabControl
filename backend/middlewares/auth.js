@@ -1,6 +1,14 @@
 const jwt = require('jsonwebtoken');
+const usuarioModel = require('../models/usuarioModel');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'labcontrol_secret_token_academico_2026';
+const JWT_SECRET = process.env.JWT_SECRET;
+const LEGACY_INSECURE_SECRET = 'labcontrol_secret_token_academico_2026';
+
+if (!JWT_SECRET || Buffer.byteLength(JWT_SECRET, 'utf8') < 32 || JWT_SECRET === LEGACY_INSECURE_SECRET) {
+  throw new Error(
+    'JWT_SECRET deve ser configurado com pelo menos 32 bytes e não pode usar o segredo padrão público. Gere um valor aleatório seguro.'
+  );
+}
 
 function generateToken(user) {
   const payload = {
@@ -10,6 +18,20 @@ function generateToken(user) {
     perfil: (user.perfil || 'usuario').toLowerCase()
   };
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
+}
+
+function isUserActive(user) {
+  if (user.ativo !== undefined && user.ativo !== null) {
+    const activeFlag = String(user.ativo).toLowerCase();
+    if (activeFlag !== '1' && activeFlag !== 'true') return false;
+  }
+
+  if (user.status !== undefined && user.status !== null && String(user.status).trim()) {
+    const status = String(user.status).trim().toLowerCase();
+    if (status !== 'ativo' && status !== 'active') return false;
+  }
+
+  return true;
 }
 
 function authenticateToken(req, res, next) {
@@ -22,14 +44,34 @@ function authenticateToken(req, res, next) {
     });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, async (err, user) => {
     if (err) {
       return res.status(403).json({ 
         error: 'Sessão expirada ou token inválido' 
       });
     }
-    req.user = user;
-    next();
+    try {
+      if (!user.id && !user.id_usuario) {
+        return res.status(401).json({ error: 'Sessão inválida. Faça login novamente.' });
+      }
+
+      const currentUser = await usuarioModel.getUserById(user.id || user.id_usuario);
+      if (!currentUser) {
+        return res.status(401).json({ error: 'Sessão inválida. Faça login novamente.' });
+      }
+      if (!isUserActive(currentUser)) {
+        return res.status(403).json({ error: 'Usuário inativo. Contate o administrador.' });
+      }
+
+      req.user = {
+        ...currentUser,
+        id: currentUser.id || currentUser.id_usuario || user.id || user.id_usuario
+      };
+      next();
+    } catch (authError) {
+      console.error('[Auth] Erro ao validar usuário da sessão:', authError.message);
+      return res.status(503).json({ error: 'Não foi possível validar a sessão no momento.' });
+    }
   });
 }
 
@@ -50,6 +92,7 @@ function authorizeAdmin(req, res, next) {
 
 module.exports = {
   generateToken,
+  isUserActive,
   authenticateToken,
   authorizeAdmin
 };

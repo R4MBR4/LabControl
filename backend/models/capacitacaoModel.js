@@ -10,17 +10,38 @@ async function getAllCapacitacoes() {
   const fkEquip = await resolveColumn(TABLE, ['equipamento_id', 'id_equipamento']);
 
   const sql = `
-    SELECT c.*, u.nome AS usuario_nome, u.email AS usuario_email, e.nome AS equipamento_nome
+    SELECT c.*, u.nome AS usuario_nome, u.email AS usuario_email,
+           e.nome AS equipamento_nome, COALESCE(c.espaco_id, e.espaco_id) AS espaco_id,
+           s.nome AS espaco_nome
     FROM \`${TABLE}\` c
     LEFT JOIN \`usuario\` u ON c.\`${fkUser}\` = u.\`${userPk}\`
     LEFT JOIN \`equipamento\` e ON c.\`${fkEquip}\` = e.\`${equipPk}\`
+    LEFT JOIN \`espaco\` s ON s.id = COALESCE(c.espaco_id, e.espaco_id)
     ORDER BY c.\`${pk}\` DESC
   `;
   const [rows] = await pool.query(sql);
   return rows;
 }
 
-async function getCapacitacoesByUser(userId) {
+function assertCanReadUserCapacitacoes(userId, requester) {
+  if (!requester || (!requester.id && !requester.id_usuario)) {
+    const error = new Error('Usuário solicitante inválido para consultar capacitações.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const requesterId = requester.id || requester.id_usuario;
+  const role = String(requester.perfil || '').toLowerCase();
+  const isAdmin = role === 'admin' || role === 'administrador';
+  if (!isAdmin && String(requesterId) !== String(userId)) {
+    const error = new Error('Você não tem permissão para consultar as capacitações deste usuário.');
+    error.statusCode = 403;
+    throw error;
+  }
+}
+
+async function getCapacitacoesByUser(userId, requester) {
+  assertCanReadUserCapacitacoes(userId, requester);
   const pk = await getPrimaryKey(TABLE);
   const equipPk = await getPrimaryKey('equipamento');
   const fkUser = await resolveColumn(TABLE, ['usuario_id', 'id_usuario']);
@@ -63,9 +84,11 @@ async function checkUserCapacitacao(userId, equipId) {
   return rows.length > 0;
 }
 
-async function createCapacitacao(data) {
-  const id = await insert(TABLE, data);
-  return findById(TABLE, id);
+async function createCapacitacao(data, executor = pool) {
+  const id = await insert(TABLE, data, executor);
+  const pk = await getPrimaryKey(TABLE);
+  const [rows] = await executor.query(`SELECT * FROM \`${TABLE}\` WHERE \`${pk}\` = ? LIMIT 1`, [id]);
+  return rows[0] || null;
 }
 
 async function updateCapacitacao(id, data) {
@@ -81,6 +104,7 @@ module.exports = {
   TABLE,
   getAllCapacitacoes,
   getCapacitacoesByUser,
+  assertCanReadUserCapacitacoes,
   checkUserCapacitacao,
   createCapacitacao,
   updateCapacitacao,

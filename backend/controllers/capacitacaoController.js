@@ -1,4 +1,6 @@
 const capacitacaoModel = require('../models/capacitacaoModel');
+const notificacaoModel = require('../models/notificacaoModel');
+const { pool } = require('../models/dbHelper');
 
 async function list(req, res) {
   try {
@@ -8,7 +10,7 @@ async function list(req, res) {
     if (userRole === 'admin' || userRole === 'administrador') {
       itens = await capacitacaoModel.getAllCapacitacoes();
     } else {
-      itens = await capacitacaoModel.getCapacitacoesByUser(req.user.id);
+      itens = await capacitacaoModel.getCapacitacoesByUser(req.user.id || req.user.id_usuario, req.user);
     }
 
     res.json(itens);
@@ -20,8 +22,17 @@ async function list(req, res) {
 
 async function getByUser(req, res) {
   try {
-    const userId = req.params.userId || req.user.id;
-    const itens = await capacitacaoModel.getCapacitacoesByUser(userId);
+    const role = (req.user.perfil || '').toLowerCase();
+    const isAdmin = role === 'admin' || role === 'administrador';
+    const requestedUserId = req.params.userId;
+    const currentUserId = req.user.id || req.user.id_usuario;
+
+    if (requestedUserId && String(requestedUserId) !== String(currentUserId) && !isAdmin) {
+      return res.status(403).json({ error: 'Você não tem permissão para consultar as capacitações deste usuário.' });
+    }
+
+    const userId = isAdmin && requestedUserId ? requestedUserId : currentUserId;
+    const itens = await capacitacaoModel.getCapacitacoesByUser(userId, req.user);
     res.json(itens);
   } catch (err) {
     console.error('[Capacitacao] Erro ao buscar:', err);
@@ -42,16 +53,37 @@ async function check(req, res) {
 }
 
 async function create(req, res) {
+  let connection;
+  let transactionStarted = false;
   try {
     const { usuario_id, equipamento_id } = req.body;
     if (!usuario_id || !equipamento_id) {
       return res.status(400).json({ error: 'Identificador de usuário e equipamento são obrigatórios' });
     }
-    const nova = await capacitacaoModel.createCapacitacao(req.body);
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const nova = await capacitacaoModel.createCapacitacao(req.body, connection);
+    const capacitacaoId = nova.id || nova.id_capacitacao;
+    await notificacaoModel.createForUser({
+      usuario_id,
+      tipo: 'capacitacao_registrada',
+      titulo: 'Capacitação registrada',
+      mensagem: `Uma capacitação para o equipamento #${equipamento_id} foi registrada em seu nome.`,
+      link: '/capacitacoes',
+      entidade: 'capacitacao',
+      entidade_id: capacitacaoId,
+      dedupe_key: `capacitacao_registrada:${capacitacaoId}:${usuario_id}`
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
     res.status(201).json(nova);
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Capacitacao] Erro ao registrar:', err);
     res.status(500).json({ error: 'Erro ao registrar capacitação: ' + err.message });
+  } finally {
+    if (connection) connection.release();
   }
 }
 

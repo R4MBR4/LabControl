@@ -1,11 +1,76 @@
 const equipamentoModel = require('../models/equipamentoModel');
+const documentoTecnicoModel = require('../models/documentoTecnicoModel');
+const auditoriaModel = require('../models/auditoriaModel');
+const { pool } = require('../models/dbHelper');
 const QRCode = require('qrcode');
+
+const TECHNICAL_TEXT_LIMITS = {
+  especificacoes: 5000,
+  fornecedor: 160,
+  garantia_detalhes: 500
+};
+
+function validateTechnicalFields(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { error: 'Os dados técnicos informados são inválidos.' };
+  }
+  const fields = {};
+  for (const [field, maxLength] of Object.entries(TECHNICAL_TEXT_LIMITS)) {
+    if (!Object.prototype.hasOwnProperty.call(payload, field)) continue;
+    const value = payload[field];
+    if (value !== null && typeof value !== 'string') {
+      return { error: `O campo ${field} deve ser texto.` };
+    }
+    const normalized = typeof value === 'string' ? value.trim() : '';
+    if (normalized.length > maxLength) {
+      return { error: `O campo ${field} deve conter no máximo ${maxLength} caracteres.` };
+    }
+    fields[field] = normalized || null;
+  }
+
+  for (const field of ['data_aquisicao', 'garantia_ate']) {
+    if (!Object.prototype.hasOwnProperty.call(payload, field)) continue;
+    const value = payload[field];
+    if (value === null || value === '') {
+      fields[field] = null;
+      continue;
+    }
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return { error: `O campo ${field} deve ser uma data válida no formato AAAA-MM-DD.` };
+    }
+    const parsed = new Date(`${value}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+      return { error: `O campo ${field} deve ser uma data válida no formato AAAA-MM-DD.` };
+    }
+    fields[field] = value;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'valor_aquisicao')) {
+    const value = payload.valor_aquisicao;
+    if (value === null || value === '') {
+      fields.valor_aquisicao = null;
+    } else {
+      const amountText = String(value).trim();
+      if (!/^\d{1,10}(?:\.\d{1,2})?$/.test(amountText)) {
+        return { error: 'O valor de aquisição deve ser não negativo e ter no máximo duas casas decimais.' };
+      }
+      fields.valor_aquisicao = Number(amountText).toFixed(2);
+    }
+  }
+
+  return { fields };
+}
 
 async function list(req, res) {
   try {
     const filters = {};
     if (req.query.status) filters.status = req.query.status;
     if (req.query.espaco_id) filters.espaco_id = req.query.espaco_id;
+    if (req.query.search) filters.search = req.query.search;
+    if (req.query.incluir_inativos !== undefined) filters.incluir_inativos = req.query.incluir_inativos;
+    if (req.query.apenas_inativos !== undefined) filters.apenas_inativos = req.query.apenas_inativos;
+    if (req.query.inativo !== undefined) filters.inativo = req.query.inativo === 'true' || req.query.inativo === '1';
+
     if (req.query.exige_capacitacao !== undefined) {
       filters.exige_capacitacao = req.query.exige_capacitacao === 'true' || req.query.exige_capacitacao === '1';
     }
@@ -14,12 +79,7 @@ async function list(req, res) {
     res.json(equipamentos);
   } catch (err) {
     console.error('[Equipamento] Erro ao listar:', err.message);
-    res.json([
-      { id: 1, nome: 'Impressora 3D Creality Ender 3 Pro', codigo_patrimonio: 'EQ-1001', espaco_nome: 'Lab Prototipagem', tipo: 'Prototipagem', status: 'disponivel', exige_capacitacao: 1, descricao: 'Impressora FDM com área de impressão 220x220x250mm para filamentos PLA e PETG.' },
-      { id: 2, nome: 'Osciloscópio Digital Tektronix TBS1052B', codigo_patrimonio: 'EQ-1002', espaco_nome: 'Lab Robótica', tipo: 'Eletrônica', status: 'em_uso', exige_capacitacao: 0, descricao: 'Dois canais, 50 MHz de largura de banda e taxa de amostragem de 1 GS/s.' },
-      { id: 3, nome: 'Cortadora a Laser CO2 60W', codigo_patrimonio: 'EQ-1003', espaco_nome: 'Lab Prototipagem', tipo: 'Corte / Usinagem', status: 'manutencao', exige_capacitacao: 1, descricao: 'Corte e gravação de chapas acrílicas e MDF. Bloqueada para alinhamento óptico.' },
-      { id: 4, nome: 'Fonte de Alimentação Simétrica DC 30V 5A', codigo_patrimonio: 'EQ-1004', espaco_nome: 'Lab Robótica', tipo: 'Eletrônica', status: 'disponivel', exige_capacitacao: 0, descricao: 'Fonte ajustável com proteção de sobrecorrente e display digital quádruplo.' }
-    ]);
+    res.status(500).json({ error: 'Não foi possível carregar os equipamentos. Tente novamente.' });
   }
 }
 
@@ -37,48 +97,232 @@ async function getById(req, res) {
 }
 
 async function create(req, res) {
+  let connection;
+  let transactionStarted = false;
+
   try {
     const { nome } = req.body;
     if (!nome) {
       return res.status(400).json({ error: 'O nome do equipamento é obrigatório' });
     }
-    const novo = await equipamentoModel.createEquipamento(req.body);
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const novo = await equipamentoModel.createEquipamento(req.body, connection);
+    await auditoriaModel.registrarEvento({
+      equipamento_id: novo.id || novo.id_equipamento,
+      entidade: 'equipamento',
+      entidade_id: novo.id || novo.id_equipamento,
+      acao: 'equipamento_criado',
+      usuario_id: req.user.id,
+      detalhes: { nome: novo.nome, espaco_id: novo.espaco_id, status: novo.status }
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
     res.status(201).json(novo);
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Equipamento] Erro ao cadastrar:', err);
-    res.status(500).json({ error: 'Erro ao cadastrar equipamento' });
+    res.status(500).json({ error: 'Erro ao cadastrar equipamento: ' + err.message });
+  } finally {
+    if (connection) connection.release();
   }
 }
 
 async function update(req, res) {
+  let connection;
+  let transactionStarted = false;
+
   try {
-    const updated = await equipamentoModel.updateEquipamento(req.params.id, req.body);
-    if (!updated) {
+    const technicalFields = validateTechnicalFields(req.body);
+    if (technicalFields.error) {
+      return res.status(400).json({ error: technicalFields.error });
+    }
+    const payload = { ...req.body, ...technicalFields.fields };
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const anterior = await equipamentoModel.getEquipamentoById(req.params.id, connection);
+    if (!anterior) {
+      await connection.rollback();
+      transactionStarted = false;
       return res.status(404).json({ error: 'Equipamento não encontrado' });
     }
+    const updated = await equipamentoModel.updateEquipamento(req.params.id, payload, connection);
+    if (!updated) {
+      await connection.rollback();
+      transactionStarted = false;
+      return res.status(404).json({ error: 'Equipamento não encontrado' });
+    }
+    const camposIgnorados = new Set(['foto_url', 'foto', 'imagem', 'image']);
+    const alteracoes = Object.entries(payload)
+      .filter(([campo]) => !camposIgnorados.has(campo.toLowerCase()))
+      .reduce((resultado, [campo, valorNovo]) => {
+        const valorAnterior = anterior[campo];
+        if (String(valorAnterior ?? '') !== String(valorNovo ?? '')) {
+          resultado[campo] = { anterior: valorAnterior ?? null, novo: valorNovo ?? null };
+        }
+        return resultado;
+      }, {});
+    if (Object.keys(alteracoes).length > 0) {
+      const campos = Object.keys(alteracoes);
+      const acao = campos.includes('espaco_id') || campos.includes('id_espaco')
+        ? 'equipamento_local_alterado'
+        : campos.includes('status')
+          ? 'equipamento_status_alterado'
+          : 'equipamento_atualizado';
+      await auditoriaModel.registrarEvento({
+        equipamento_id: updated.id || updated.id_equipamento,
+        entidade: 'equipamento',
+        entidade_id: updated.id || updated.id_equipamento,
+        acao,
+        usuario_id: req.user.id,
+        detalhes: { alteracoes }
+      }, connection);
+    }
+    await connection.commit();
+    transactionStarted = false;
     res.json(updated);
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Equipamento] Erro ao atualizar:', err);
-    res.status(500).json({ error: 'Erro ao atualizar equipamento' });
-  }
-}
-
-async function remove(req, res) {
-  try {
-    const success = await equipamentoModel.deleteEquipamento(req.params.id);
-    if (!success) {
-      return res.status(404).json({ error: 'Equipamento não encontrado' });
-    }
-    res.json({ message: 'Equipamento removido com sucesso' });
-  } catch (err) {
-    console.error('[Equipamento] Erro ao remover:', err);
-    res.status(500).json({ error: 'Erro ao remover equipamento' });
+    res.status(500).json({ error: 'Erro ao atualizar equipamento: ' + err.message });
+  } finally {
+    if (connection) connection.release();
   }
 }
 
 /**
- * Funcionalidade obrigatória 8: Histórico completo por equipamento
- * (utilizações, ocorrências, manutenções)
+ * Inativação de Equipamentos (Regra obrigatória Bloco 02):
+ * Não exclui fisicamente o equipamento. Impede novas reservas e utilização,
+ * preservando histórico, ocorrências e manutenções.
+ */
+async function inativar(req, res) {
+  let connection;
+  let transactionStarted = false;
+
+  try {
+    const { motivo } = req.body;
+    const usuarioId = req.user?.id;
+
+    if (!motivo || motivo.trim() === '') {
+      return res.status(400).json({ error: 'O motivo da inativação é obrigatório' });
+    }
+
+    const equipamento = await equipamentoModel.getEquipamentoById(req.params.id);
+    if (!equipamento) {
+      return res.status(404).json({ error: 'Equipamento não encontrado' });
+    }
+
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const inativado = await equipamentoModel.inativarEquipamento(req.params.id, usuarioId, motivo.trim(), connection);
+    await auditoriaModel.registrarEvento({
+      equipamento_id: req.params.id,
+      entidade: 'equipamento',
+      entidade_id: req.params.id,
+      acao: 'equipamento_inativado',
+      usuario_id: usuarioId,
+      detalhes: { motivo: motivo.trim() }
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
+    res.json({
+      message: 'Equipamento inativado com sucesso. Histórico preservado.',
+      equipamento: inativado
+    });
+  } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
+    console.error('[Equipamento] Erro ao inativar:', err);
+    res.status(500).json({ error: 'Erro ao inativar equipamento: ' + err.message });
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+/**
+ * Reativação de Equipamentos
+ */
+async function reativar(req, res) {
+  let connection;
+  let transactionStarted = false;
+
+  try {
+    const equipamento = await equipamentoModel.getEquipamentoById(req.params.id);
+    if (!equipamento) {
+      return res.status(404).json({ error: 'Equipamento não encontrado' });
+    }
+
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const reativado = await equipamentoModel.reativarEquipamento(req.params.id, connection);
+    await auditoriaModel.registrarEvento({
+      equipamento_id: req.params.id,
+      entidade: 'equipamento',
+      entidade_id: req.params.id,
+      acao: 'equipamento_reativado',
+      usuario_id: req.user.id
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
+    res.json({
+      message: 'Equipamento reativado com sucesso.',
+      equipamento: reativado
+    });
+  } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
+    console.error('[Equipamento] Erro ao reativar:', err);
+    res.status(500).json({ error: 'Erro ao reativar equipamento: ' + err.message });
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+/**
+ * Remoção: verifica histórico e inativa se houver uso prévio
+ */
+async function remove(req, res) {
+  let connection;
+  let transactionStarted = false;
+
+  try {
+    const usuarioId = req.user?.id;
+    const motivo = req.body?.motivo || 'Inativação solicitada via exclusão de equipamento com histórico.';
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const result = await equipamentoModel.deleteEquipamento(req.params.id, usuarioId, motivo, connection);
+    
+    if (!result || !result.success) {
+      await connection.rollback();
+      transactionStarted = false;
+      return res.status(404).json({ error: 'Equipamento não encontrado' });
+    }
+
+    await auditoriaModel.registrarEvento({
+      equipamento_id: req.params.id,
+      entidade: 'equipamento',
+      entidade_id: req.params.id,
+      acao: result.inativado ? 'equipamento_inativado_por_exclusao' : 'equipamento_excluido_sem_historico',
+      usuario_id: usuarioId,
+      detalhes: { motivo }
+    }, connection);
+    await connection.commit();
+    transactionStarted = false;
+    res.json(result);
+  } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
+    console.error('[Equipamento] Erro ao remover:', err);
+    res.status(500).json({ error: 'Erro ao remover equipamento: ' + err.message });
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+/**
+ * Histórico completo por equipamento
  */
 async function getHistorico(req, res) {
   try {
@@ -87,65 +331,22 @@ async function getHistorico(req, res) {
       return res.status(404).json({ error: 'Equipamento não encontrado' });
     }
     const historico = await equipamentoModel.getEquipamentoHistorico(req.params.id);
+    const auditoria = await auditoriaModel.listarEventosEquipamento(req.params.id);
+    const documentos = await documentoTecnicoModel.listByEquipamento(req.params.id);
     res.json({
       equipamento: equip,
-      ...historico
+      ...historico,
+      auditoria,
+      documentos
     });
   } catch (err) {
     console.error('[Equipamento] Erro ao obter histórico:', err.message);
-    res.json({
-      equipamento: {
-        id: req.params.id,
-        nome: 'Impressora 3D Creality Ender 3 Pro',
-        codigo_patrimonio: `EQ-${req.params.id}`,
-        status: 'disponivel',
-        exige_capacitacao: 1,
-        espaco_nome: 'Laboratório de Prototipagem e Impressão 3D',
-        descricao: 'Equipamento de fabricação digital para criação de peças mecânicas em PLA.'
-      },
-      utilizacoes: [
-        {
-          id: 1,
-          usuario_nome: 'Aluno Pesquisador',
-          usuario_email: 'aluno@labcontrol.com',
-          data_checkin: new Date(Date.now() - 7200000),
-          data_checkout: new Date(Date.now() - 1800000),
-          condicao_inicial: 'Equipamento limpo e nivelado',
-          condicao_devolucao: 'Perfeito estado operacional',
-          status: 'finalizado'
-        }
-      ],
-      ocorrencias: [
-        {
-          id: 1,
-          titulo: 'Calibração do bico extrusor',
-          descricao: 'Ajuste de offset do sensor Z para primeira camada',
-          gravidade: 'baixa',
-          status: 'resolvida',
-          usuario_nome: 'Técnico de Laboratório',
-          decisao_admin: 'Calibração validada com impressão de cubo de teste 20mm.',
-          data_registro: new Date(Date.now() - 86400000)
-        }
-      ],
-      manutencoes: [
-        {
-          id: 1,
-          tipo: 'preventiva',
-          descricao: 'Lubrificação das guias lineares e troca do bico 0.4mm',
-          status: 'concluida',
-          custo: 85.00,
-          data_inicio: new Date(Date.now() - 172800000),
-          data_fim: new Date(Date.now() - 86400000),
-          responsavel: 'Suporte Técnico',
-          observacoes: 'Equipamento testado e liberado para uso acadêmico.'
-        }
-      ]
-    });
+    res.status(500).json({ error: 'Erro ao obter histórico do equipamento: ' + err.message });
   }
 }
 
 /**
- * Funcionalidade obrigatória 3: Geração automática de QR Code por equipamento
+ * Geração de QR Code com dados estáveis do equipamento
  */
 async function getQRCode(req, res) {
   try {
@@ -154,9 +355,13 @@ async function getQRCode(req, res) {
       return res.status(404).json({ error: 'Equipamento não encontrado' });
     }
 
+    const codigoLab = equip.codigo_labcontrol || `LC-EQ-${String(equip.id).padStart(4, '0')}`;
+    const codigoPat = equip.patrimonio_ufpi || equip.codigo_patrimonio || equip.codigo || `EQ-${equip.id}`;
+
     const payload = JSON.stringify({
-      id: equip.id || equip.id_equipamento,
-      codigo: equip.codigo_patrimonio || equip.patrimonio || equip.codigo || `EQ-${equip.id}`,
+      id: equip.id,
+      codigo_labcontrol: codigoLab,
+      patrimonio_ufpi: codigoPat,
       nome: equip.nome,
       action: 'LABCONTROL_CHECKIN_CHECKOUT'
     });
@@ -172,9 +377,11 @@ async function getQRCode(req, res) {
     });
 
     res.json({
-      equipamento_id: equip.id || equip.id_equipamento,
+      equipamento_id: equip.id,
       nome: equip.nome,
-      codigo: equip.codigo_patrimonio || equip.patrimonio || equip.codigo,
+      codigo: codigoPat,
+      codigo_labcontrol: codigoLab,
+      patrimonio_ufpi: codigoPat,
       qr_payload: payload,
       qr_code_image: qrDataUrl
     });
@@ -189,7 +396,10 @@ module.exports = {
   getById,
   create,
   update,
+  inativar,
+  reativar,
   remove,
   getHistorico,
-  getQRCode
+  getQRCode,
+  validateTechnicalFields
 };

@@ -8,6 +8,8 @@ router.use(authenticateToken);
 // Consulta permitida a todos os perfis
 router.get('/', espacoController.list);
 router.get('/:id', espacoController.getById);
+router.get('/:id/detalhes', espacoController.getDetalhes);
+router.get('/:id/monitor', espacoController.getMonitor);
 
 // Gestão restrita ao Administrador
 router.post('/', authorizeAdmin, espacoController.create);

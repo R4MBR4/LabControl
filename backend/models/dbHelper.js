@@ -37,7 +37,7 @@ async function getPrimaryKey(tableName) {
 /**
  * Insere um registro na tabela existente utilizando apenas colunas existentes
  */
-async function insert(tableName, data) {
+async function insert(tableName, data, executor = pool) {
   const filtered = await filterValidColumns(tableName, data);
   const keys = Object.keys(filtered);
   if (keys.length === 0) {
@@ -49,14 +49,14 @@ async function insert(tableName, data) {
   const values = Object.values(filtered);
 
   const sql = `INSERT INTO \`${tableName}\` (${columns}) VALUES (${placeholders})`;
-  const [result] = await pool.query(sql, values);
+  const [result] = await executor.query(sql, values);
   return result.insertId;
 }
 
 /**
  * Atualiza um registro existente na tabela
  */
-async function update(tableName, id, data) {
+async function update(tableName, id, data, executor = pool) {
   const pk = await getPrimaryKey(tableName);
   const filtered = await filterValidColumns(tableName, data);
   delete filtered[pk]; // não atualiza a PK
@@ -70,17 +70,17 @@ async function update(tableName, id, data) {
   const values = [...Object.values(filtered), id];
 
   const sql = `UPDATE \`${tableName}\` SET ${setClauses} WHERE \`${pk}\` = ?`;
-  const [result] = await pool.query(sql, values);
+  const [result] = await executor.query(sql, values);
   return result.affectedRows > 0;
 }
 
 /**
  * Remove um registro por ID
  */
-async function remove(tableName, id) {
+async function remove(tableName, id, executor = pool) {
   const pk = await getPrimaryKey(tableName);
   const sql = `DELETE FROM \`${tableName}\` WHERE \`${pk}\` = ?`;
-  const [result] = await pool.query(sql, [id]);
+  const [result] = await executor.query(sql, [id]);
   return result.affectedRows > 0;
 }
 
@@ -118,6 +118,7 @@ async function findAll(tableName, conditions = {}, orderBy = null) {
 
 module.exports = {
   pool,
+  getTableColumns,
   getPrimaryKey,
   resolveColumn,
   filterValidColumns,

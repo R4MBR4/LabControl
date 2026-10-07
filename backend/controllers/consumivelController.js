@@ -1,4 +1,6 @@
 const consumivelModel = require('../models/consumivelModel');
+const notificacaoModel = require('../models/notificacaoModel');
+const { pool, resolveColumn } = require('../models/dbHelper');
 
 async function list(req, res) {
   try {
@@ -6,11 +8,7 @@ async function list(req, res) {
     res.json(itens);
   } catch (err) {
     console.error('[Consumivel] Erro ao listar:', err.message);
-    res.json([
-      { id: 1, nome: 'Filamento PLA 1.75mm Preto 1kg', categoria: 'Impressão 3D', quantidade: 2, quantidade_minima: 5, unidade_medida: 'rolo', localizacao: 'Armário A, Prateleira 2', estoque_critico: true },
-      { id: 2, nome: 'Placa de Cobre Virgem para PCI', categoria: 'Eletrônica', quantidade: 40, quantidade_minima: 15, unidade_medida: 'un', localizacao: 'Gaveteiro 3', estoque_critico: false },
-      { id: 3, nome: 'Álcool Isopropílico 99.8% 1L', categoria: 'Limpeza / Manutenção', quantidade: 1, quantidade_minima: 3, unidade_medida: 'litro', localizacao: 'Bancada Química', estoque_critico: true }
-    ]);
+    res.status(500).json({ error: 'Não foi possível carregar os consumíveis. Tente novamente.' });
   }
 }
 
@@ -28,21 +26,31 @@ async function getById(req, res) {
 }
 
 async function create(req, res) {
+  let connection;
+  let transactionStarted = false;
   try {
-    const { nome, quantidade, quantidade_minima } = req.body;
+    const { nome, quantidade } = req.body;
     if (!nome) {
       return res.status(400).json({ error: 'O nome do consumível é obrigatório' });
     }
 
-    if (quantidade !== undefined && Number(quantidade) < 0) {
-      return res.status(400).json({ error: 'A quantidade inicial não pode ser negativa' });
+    if (quantidade !== undefined && (!Number.isFinite(Number(quantidade)) || Number(quantidade) < 0)) {
+      return res.status(400).json({ error: 'A quantidade inicial deve ser um número não negativo' });
     }
 
-    const novo = await consumivelModel.createConsumivel(req.body);
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const novo = await consumivelModel.createConsumivel(req.body, req.user.id, connection);
+    await connection.commit();
+    transactionStarted = false;
     res.status(201).json(novo);
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Consumivel] Erro ao cadastrar:', err);
-    res.status(500).json({ error: 'Erro ao cadastrar consumível: ' + err.message });
+    res.status(err.statusCode || 500).json({ error: 'Erro ao cadastrar consumível: ' + err.message });
+  } finally {
+    if (connection) connection.release();
   }
 }
 
@@ -55,7 +63,29 @@ async function update(req, res) {
     res.json(updated);
   } catch (err) {
     console.error('[Consumivel] Erro ao atualizar:', err);
-    res.status(500).json({ error: 'Erro ao atualizar consumível: ' + err.message });
+    res.status(err.statusCode || 500).json({ error: 'Erro ao atualizar consumível: ' + err.message });
+  }
+}
+
+async function historico(req, res) {
+  try {
+    const item = await consumivelModel.getConsumivelById(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Consumível não encontrado.' });
+    const movimentacoes = await consumivelModel.getHistoricoMovimentacoes(req.params.id);
+    res.json(movimentacoes);
+  } catch (err) {
+    console.error('[Consumivel] Erro ao carregar histórico:', err);
+    res.status(500).json({ error: 'Não foi possível carregar o histórico do consumível.' });
+  }
+}
+
+async function historicoGeral(req, res) {
+  try {
+    const movimentacoes = await consumivelModel.getAllHistoricoMovimentacoes();
+    res.json(movimentacoes);
+  } catch (err) {
+    console.error('[Consumivel] Erro ao carregar relatório de movimentações:', err);
+    res.status(500).json({ error: 'Não foi possível carregar o relatório de movimentações.' });
   }
 }
 
@@ -63,27 +93,75 @@ async function update(req, res) {
  * Regra de negócio crítica: movimentação de estoque com proteção contra saldo negativo
  */
 async function movimentar(req, res) {
+  let connection;
+  let transactionStarted = false;
   try {
-    const { delta, tipo, quantidade } = req.body;
-    let valorDelta = 0;
-
-    if (delta !== undefined) {
-      valorDelta = Number(delta);
-    } else if (tipo && quantidade !== undefined) {
-      const qtd = Math.abs(Number(quantidade));
-      valorDelta = tipo === 'entrada' ? qtd : -qtd;
-    } else {
-      return res.status(400).json({ error: 'Informe o tipo (entrada/saida) e a quantidade' });
+    const { delta, tipo, quantidade, observacao, motivo } = req.body;
+    let movementType = tipo;
+    let movementQuantity = quantidade;
+    if (delta !== undefined && tipo === undefined && quantidade === undefined) {
+      const numericDelta = Number(delta);
+      if (!Number.isFinite(numericDelta) || numericDelta === 0) {
+        return res.status(400).json({ error: 'A quantidade movimentada deve ser diferente de zero.' });
+      }
+      movementType = numericDelta > 0 ? 'entrada' : 'saida';
+      movementQuantity = Math.abs(numericDelta);
+    }
+    if (typeof movementType !== 'string' || movementQuantity === undefined) {
+      return res.status(400).json({ error: 'Informe o tipo de movimentação e uma quantidade positiva.' });
+    }
+    const observation = observacao || motivo || '';
+    if (typeof observation !== 'string' || observation.length > 500) {
+      return res.status(400).json({ error: 'A observação deve conter no máximo 500 caracteres.' });
     }
 
-    const atualizado = await consumivelModel.movimentarEstoque(req.params.id, valorDelta);
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const antes = await consumivelModel.getConsumivelById(req.params.id, connection);
+    if (!antes) {
+      const error = new Error('Consumível não encontrado.');
+      error.statusCode = 404;
+      throw error;
+    }
+    const quantidadeMinimaColumn = await resolveColumn(
+      'consumivel',
+      ['quantidade_minima', 'estoque_minimo', 'qtd_minima']
+    );
+    const quantidadeMinima = Number(antes[quantidadeMinimaColumn] || 0);
+    const resultado = await consumivelModel.movimentarEstoque(
+      req.params.id,
+      movementType.toLowerCase(),
+      movementQuantity,
+      req.user.id,
+      observation,
+      connection
+    );
+    const saldoAnterior = Number(resultado.movimentacao.quantidade_anterior);
+    const saldoAtual = Number(resultado.movimentacao.quantidade_resultante);
+    if (saldoAnterior > quantidadeMinima && saldoAtual <= quantidadeMinima) {
+      await notificacaoModel.createForRole('admin', {
+        tipo: 'estoque_baixo',
+        titulo: 'Estoque de consumível baixo',
+        mensagem: `${resultado.movimentacao.consumivel_nome} atingiu o limite mínimo de estoque (${saldoAtual}).`,
+        link: '/consumiveis',
+        entidade: 'consumivel',
+        entidade_id: req.params.id,
+        dedupe_key: `estoque_baixo:${req.params.id}:${resultado.movimentacao.id}`
+      }, connection, req.user.id);
+    }
+    await connection.commit();
+    transactionStarted = false;
     res.json({
       message: 'Estoque atualizado com sucesso',
-      consumivel: atualizado
+      ...resultado
     });
   } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
     console.error('[Consumivel] Erro ao movimentar estoque:', err);
-    res.status(400).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message });
+  } finally {
+    if (connection) connection.release();
   }
 }
 
@@ -103,6 +181,8 @@ async function remove(req, res) {
 module.exports = {
   list,
   getById,
+  historico,
+  historicoGeral,
   create,
   update,
   movimentar,

@@ -12,24 +12,32 @@ import {
   X,
   Cpu,
   User,
-  AlertCircle
+  AlertCircle,
+  Camera,
+  Eye
 } from 'lucide-react';
+import CameraEvidenceCapture from '../components/CameraEvidenceCapture';
+import LoadError from '../components/LoadError';
 
 export default function Ocorrencias() {
   const { user, isAdmin } = useAuth();
   const [ocorrencias, setOcorrencias] = useState([]);
   const [equipamentos, setEquipamentos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const [modalNewOpen, setModalNewOpen] = useState(false);
   const [modalDecidirOpen, setModalDecidirOpen] = useState(false);
   const [selectedOcorrencia, setSelectedOcorrencia] = useState(null);
+  const [previewPhoto, setPreviewPhoto] = useState(null);
 
   const [newForm, setNewForm] = useState({
     equipamento_id: '',
     titulo: '',
     descricao: '',
-    gravidade: 'media'
+    gravidade: 'media',
+    foto_evidencia: null,
+    foto_metadata: null
   });
 
   const [decisaoForm, setDecisaoForm] = useState({
@@ -44,6 +52,7 @@ export default function Ocorrencias() {
   const loadData = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const [resOc, resEq] = await Promise.all([
         api.get('/ocorrencias'),
         api.get('/equipamentos')
@@ -52,6 +61,7 @@ export default function Ocorrencias() {
       setEquipamentos(resEq.data);
     } catch (err) {
       console.error('[Ocorrencias] Erro:', err);
+      setLoadError(err.response?.data?.error || 'Verifique a conexão e tente carregar novamente.');
     } finally {
       setLoading(false);
     }
@@ -66,7 +76,9 @@ export default function Ocorrencias() {
       equipamento_id: equipamentos[0]?.id || equipamentos[0]?.id_equipamento || '',
       titulo: '',
       descricao: '',
-      gravidade: 'media'
+      gravidade: 'media',
+      foto_evidencia: null,
+      foto_metadata: null
     });
     setError('');
     setModalNewOpen(true);
@@ -137,13 +149,14 @@ export default function Ocorrencias() {
           <span>{success}</span>
         </div>
       )}
+      <LoadError message={loadError} onRetry={loadData} />
 
       {/* Lista de Ocorrências */}
       {loading ? (
         <div className="py-12 flex justify-center">
           <div className="w-8 h-8 border-3 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
-      ) : ocorrencias.length === 0 ? (
+      ) : loadError ? null : ocorrencias.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-400 text-sm">
           Nenhuma ocorrência registrada. Tudo operando com normalidade!
         </div>
@@ -192,6 +205,41 @@ export default function Ocorrencias() {
                   </div>
 
                   <p className="text-xs text-slate-600 my-3">{oc.descricao}</p>
+
+                  {/* Evidência Fotográfica Coletada */}
+                  {oc.foto_evidencia && (
+                    <div className="my-3 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                          <Camera className="w-3.5 h-3.5 text-teal-600" />
+                          Evidência Fotográfica por Câmera
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewPhoto({ photo: oc.foto_evidencia, metadata: oc.foto_metadata, titulo: oc.titulo })}
+                          className="text-[11px] text-teal-600 hover:text-teal-700 font-semibold flex items-center gap-1 hover:underline"
+                        >
+                          <Eye className="w-3 h-3" />
+                          Ampliar Foto
+                        </button>
+                      </div>
+
+                      <div
+                        onClick={() => setPreviewPhoto({ photo: oc.foto_evidencia, metadata: oc.foto_metadata, titulo: oc.titulo })}
+                        className="cursor-pointer rounded-lg overflow-hidden border border-slate-200 bg-slate-900 group relative max-h-40"
+                      >
+                        <img
+                          src={oc.foto_evidencia}
+                          alt="Evidência Fotográfica"
+                          className="w-full h-36 object-cover group-hover:scale-105 transition duration-300"
+                        />
+                        <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-bold gap-1.5 backdrop-blur-[1px]">
+                          <Eye className="w-4 h-4" />
+                          Visualizar em tela cheia
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {oc.decisao_admin && (
                     <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-xl text-xs space-y-1 mb-3">
@@ -290,13 +338,32 @@ export default function Ocorrencias() {
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Descrição Detalhada do Ocorrido</label>
                 <textarea
-                  rows="4"
+                  rows="3"
                   required
                   value={newForm.descricao}
                   onChange={(e) => setNewForm({ ...newForm, descricao: e.target.value })}
                   placeholder="Descreva o comportamento anômalo, barulhos, fumaça ou avarias observadas..."
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 ></textarea>
+              </div>
+
+              {/* Captura de Evidência Probatória - Câmera Exclusiva (Sem Galeria) */}
+              <div className="pt-2 border-t border-slate-100">
+                <CameraEvidenceCapture
+                  label="Fotografia de Evidência (Câmera ao Vivo)"
+                  initialPhoto={newForm.foto_evidencia}
+                  contextInfo={{
+                    user,
+                    equipamento: equipamentos.find(e => String(e.id || e.id_equipamento) === String(newForm.equipamento_id)),
+                    tipoContexto: 'Ocorrência / Relato de Avaria'
+                  }}
+                  onCapture={(dataUrl, meta) => {
+                    setNewForm(prev => ({ ...prev, foto_evidencia: dataUrl, foto_metadata: meta }));
+                  }}
+                  onClear={() => {
+                    setNewForm(prev => ({ ...prev, foto_evidencia: null, foto_metadata: null }));
+                  }}
+                />
               </div>
 
               <div className="pt-3 flex justify-end gap-2">
@@ -329,6 +396,29 @@ export default function Ocorrencias() {
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {selectedOcorrencia.foto_evidencia && (
+              <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5 text-teal-600" />
+                  Evidência Fotográfica Anexada pelo Usuário:
+                </span>
+                <div 
+                  onClick={() => setPreviewPhoto({ photo: selectedOcorrencia.foto_evidencia, metadata: selectedOcorrencia.foto_metadata, titulo: selectedOcorrencia.titulo })}
+                  className="cursor-pointer rounded-lg overflow-hidden border border-slate-200 bg-slate-900 group relative max-h-36"
+                >
+                  <img
+                    src={selectedOcorrencia.foto_evidencia}
+                    alt="Evidência da Ocorrência"
+                    className="w-full h-32 object-cover group-hover:scale-105 transition"
+                  />
+                  <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-bold gap-1">
+                    <Eye className="w-3.5 h-3.5" />
+                    Ampliar evidência
+                  </div>
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleDecidirSubmit} className="space-y-4">
               <div>
@@ -364,13 +454,17 @@ export default function Ocorrencias() {
                     <input
                       type="checkbox"
                       checked={decisaoForm.encaminhar_manutencao}
-                      onChange={(e) => setDecisaoForm({ ...decisaoForm, encaminhar_manutencao: e.target.checked })}
+                      onChange={(e) => setDecisaoForm({
+                        ...decisaoForm,
+                        encaminhar_manutencao: e.target.checked,
+                        status: e.target.checked ? 'em_analise' : decisaoForm.status
+                      })}
                       className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 border-slate-300"
                     />
                     <div className="text-xs">
-                      <span className="font-semibold text-slate-800">Bloquear e encaminhar equipamento para Manutenção</span>
+                      <span className="font-semibold text-slate-800">Criar ordem e encaminhar equipamento para Manutenção</span>
                       <p className="text-slate-500 text-[11px]">
-                        Atualiza o status do equipamento imediatamente para 'manutencao'.
+                        Cria uma ordem vinculada à ocorrência e mantém o equipamento bloqueado até a conclusão.
                       </p>
                     </div>
                   </label>
@@ -393,6 +487,53 @@ export default function Ocorrencias() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Modal de Pré-visualização da Evidência Fotográfica */}
+      {previewPhoto && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-5 shadow-2xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center">
+                  <Camera className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">
+                    {previewPhoto.titulo || 'Evidência Probatória Coletada por Câmera'}
+                  </h3>
+                  <span className="text-[11px] text-teal-600 font-medium">
+                    Foto capturada via câmera em tempo real (autenticada)
+                  </span>
+                </div>
+              </div>
+              <button 
+                onClick={() => setPreviewPhoto(null)} 
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="rounded-xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center">
+              <img
+                src={previewPhoto.photo}
+                alt="Evidência Fotográfica"
+                className="w-full max-h-[65vh] object-contain"
+              />
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPreviewPhoto(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold shadow-xs"
+              >
+                Fechar Visualização
+              </button>
+            </div>
           </div>
         </div>
       )}

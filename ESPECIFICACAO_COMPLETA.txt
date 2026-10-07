@@ -1,0 +1,436 @@
+LABCONTROL
+Especificação de Implementação e Evolução
+Documento para uso com Claude Code (Antigravity)
+Repositório: https://github.com/R4MBR4/LabControl
+0. INSTRUÇÕES OBRIGATÓRIAS PARA O MODELO
+Você está trabalhando sobre uma versão já existente do sistema LabControl.
+NÃO recrie o projeto do zero.
+NÃO substitua a arquitetura atual sem necessidade.
+NÃO remova funcionalidades que já funcionam.
+NÃO apague dados ou histórico apenas para simplificar uma implementação.
+Primeiro inspecione o projeto atual, sua estrutura, banco, rotas,
+componentes, páginas, modelos e regras existentes.
+A implementação deve ser incremental.
+Cada bloco concluído deve ser testado antes de iniciar o próximo.
+Cada bloco importante deve possuir um commit Git separado.
+1. ESTADO ATUAL DO SISTEMA
+1.1 Stack Tecnológica
+Front-end
+React (Vite) + Tailwind CSS + Lucide Icons + qrcode.react + html5-qrcode
+Back-end
+Node.js + Express.js + JWT + Bcrypt
+Banco
+MySQL — Pool de conexões via mysql2/promise
+QR Code
+Geração de etiquetas SVG/PNG e leitor via câmera/arquivo
+1.2 Páginas Existentes (Frontend)
+✓ Login.jsx
+✓ Dashboard.jsx
+✓ Espacos.jsx
+✓ Equipamentos.jsx
+✓ EquipamentoDetalhes.jsx — histórico e rastreabilidade unificada
+✓ Reservas.jsx — prevenção de conflito + verificação de capacitação
+✓ CheckinCheckout.jsx — leitura de QR Code + condição obrigatória no checkout
+✓ Ocorrencias.jsx
+✓ Manutencao.jsx — ciclo: bloqueio → reparo → desbloqueio
+✓ Consumiveis.jsx — estoque não-negativo + alerta de mínimo
+✓ Capacitacoes.jsx
+✓ Usuarios.jsx
+1.3 Controllers Existentes (Backend)
+✓ authController.js
+✓ usuarioController.js
+✓ espacoController.js
+✓ equipamentoController.js
+✓ reservaController.js
+✓ utilizacaoController.js
+✓ ocorrenciaController.js
+✓ manutencaoController.js
+✓ consumivelController.js
+✓ capacitacaoController.js
+✓ dashboardController.js
+1.4 Banco de Dados — Tabelas Existentes
+O sistema NÃO executa scripts CREATE/ALTER/DROP automaticamente.
+O banco labcontrol deve existir previamente configurado.
+Tabelas consumidas:
+usuario
+espaco
+equipamento
+reserva
+utilizacao
+ocorrencia
+manutencao
+consumivel
+capacitacao
+1.5 Regras de Negócio Já Implementadas
+✓ Prevenção de conflito de horário — bloqueio matemático de sobreposição
+✓ Equipamento em manutenção bloqueado para reservas e check-in
+✓ Capacitação obrigatória — validação por usuário antes de reservar/check-in
+✓ Registro obrigatório da condição no check-out; avaria gera ocorrência automática
+✓ Estoque de consumíveis não-negativo — validação atômica com alerta visual
+✓ Ciclo completo de manutenção: status manutenção → laudo → status disponivel
+2. REGRA ABSOLUTA DE DESENVOLVIMENTO
+Antes de modificar qualquer arquivo:
+1. Inspecione a estrutura completa do projeto
+2. Identifique as páginas existentes
+3. Identifique os componentes existentes
+4. Identifique as rotas da API
+5. Identifique os controllers/services existentes
+6. Identifique o modelo atual do banco
+7. Identifique as relações entre as tabelas
+8. Identifique as regras de negócio já implementadas
+9. Identifique o que já funciona
+10. Identifique o que está incompleto
+⚠ Não duplique componentes ou funcionalidades que já existem.
+⚠ Reutilize o que puder ser reutilizado.
+3. VERSIONAMENTO — COMMITS
+Trabalhe com commits separados. Nunca faça um único commit gigantesco.
+Commit 01
+chore: audit and prepare existing LabControl
+Commit 02
+feat: improve equipment management
+Commit 03
+feat: batch QR generation and labels
+Commit 04
+feat: camera evidence photos
+Commit 05
+feat: QR inventory
+Commit 06
+feat: laboratory management and monitor mode
+Commit 07
+feat: reservation management
+Commit 08
+feat: recurring reservations and no-show
+Commit 09
+feat: admin dashboard and indicators
+Commit 10
+feat: occurrence and maintenance improvements
+Commit 11
+feat: audit history and traceability
+Commit 12
+feat: data import and export
+Commit 13
+feat: responsive and usability improvements
+Commit 14
+feat: reports
+Commit 15
+feat: advanced features
+Commit 16
+feat: experimental features
+4. BLOCOS DE IMPLEMENTAÇÃO
+ BLOCO 01 — AUDITORIA E PREPARAÇÃO 
+Antes de desenvolver, verificar:
+banco e migrations/scripts
+tabelas e foreign keys
+índices
+rotas
+autenticação e permissões
+componentes e telas
+funcionalidades incompletas
+Criar um registro interno do que já existe.
+⚠ Não substituir funcionalidades existentes sem necessidade.
+ BLOCO 02 — EQUIPAMENTOS 
+Campos a adicionar/verificar:
+nome
+categoria
+patrimônio UFPI (identificador oficial, diferente do código LabControl)
+código LabControl (gerado internamente)
+marca
+modelo
+número de série
+laboratório
+localização detalhada
+status
+necessidade de capacitação
+observações
+fotografia
+Inativação de Equipamentos
+Não excluir fisicamente registros com histórico. Um equipamento inativo:
+não pode receber nova reserva
+não pode ser utilizado normalmente
+continua disponível para consulta administrativa
+mantém histórico, ocorrências, manutenções e utilizações anteriores
+Registrar: data da inativação, usuário responsável, motivo.
+ BLOCO 03 — QR CODE 
+Cada equipamento deve possuir QR Code estável (nunca muda de equipamento).
+O QR Code deve identificar o equipamento — não incluir informações pessoais.
+A leitura deve disponibilizar ações conforme: perfil / status / contexto / reserva / utilização.
+QR Code em Lote — Fluxo:
+1. Admin abre a tela de Equipamentos
+2. Seleciona vários equipamentos (seleção múltipla)
+3. Clica em "Gerar etiquetas QR"
+4. Sistema gera folha imprimível com: QR + nome + patrimônio (se disponível) + código LabControl
+5. Admin imprime, instala fisicamente e escaneia para testar
+⚠ Não gerar apenas uma sequência de QR Codes sem identificação textual.
+ BLOCO 04 — FOTOGRAFIAS 
+Dois comportamentos completamente diferentes — não misturar:
+Cadastro administrativo (criação/edição do equipamento):
+Permitir câmera OU galeria.
+Evidência do usuário (ocorrência / dano / check-out / evidência de uso):
+Permitir SOMENTE captura pela câmera.
+Não mostrar seletor de galeria nesse fluxo.
+Associar ao máximo de contexto: usuário, equipamento, utilização, ocorrência, timestamp.
+ BLOCO 05 — INVENTÁRIO POR QR 
+Fluxo de inventário por laboratório:
+1. Admin escolhe laboratório
+2. Sistema apresenta equipamentos esperados
+3. Admin inicia leitura (escaneia QR Code)
+4. Sistema identifica o equipamento e verifica localização cadastrada
+5. Equipamento é marcado como conferido e progresso é atualizado
+6. Visualizar: conferidos / pendentes / não localizados / divergentes
+Divergência de Localização:
+Se equipamento estiver cadastrado em outro laboratório, mostrar claramente:
+nome e patrimônio do equipamento
+laboratório cadastrado
+laboratório onde foi encontrado
+O Administrador decide se atualiza ou mantém a localização.
+⚠ Não alterar automaticamente a localização com base apenas no QR encontrado.
+Registrar: usuário que decidiu, data/hora, ação tomada.
+ BLOCO 06 — LABORATÓRIOS 
+Página do laboratório deve apresentar:
+nome, código, capacidade, status
+localização e responsável
+foto
+equipamentos do espaço
+reservas e agenda
+inventário
+QR do espaço
+utilização atual
+Modo Monitor (tela de exibição para o laboratório):
+Mostrar em tela simples e legível à distância:
+nome do espaço
+utilização atual e usuário
+horário de início e término previsto
+próximas reservas
+⚠ Evitar exibição de informações desnecessárias. Respeitar permissões.
+ BLOCO 07 — RESERVAS 
+Melhorar a tela administrativa de reservas com:
+Busca textual
+Filtros: recurso / solicitante / laboratório / equipamento / período / status / finalidade
+Combinações de filtros
+⚠ Não remover a prevenção atual de conflitos.
+Calendário de Reservas:
+Visualização por dia / semana / mês.
+Mostrar: ocupação, disponibilidade, conflitos, reservas recorrentes, cancelamentos.
+Reservas Recorrentes:
+Exemplos: toda segunda, toda quarta, determinados dias da semana, com período inicial/final.
+⚠ Verificar conflitos em TODAS as ocorrências antes de confirmar a série.
+Cancelamento de Ocorrência Recorrente:
+Permitir: cancelar apenas esta ocorrência / esta e próximas / toda a série.
+Caso mínimo obrigatório: liberar uma ocorrência individual sem destruir a série inteira.
+No-Show:
+Tolerância configurável pelo Administrador (ex: 15 minutos após o horário da reserva).
+⚠ Não aplicar punição automática. Preservar histórico de no-show para indicadores.
+ BLOCO 08 — DASHBOARD ADMINISTRATIVO (prioridade alta) 
+O Dashboard deve responder rapidamente: "O que está acontecendo agora?" e "O que precisa de atenção?"
+KPIs Obrigatórios:
+Equipamentos
+total / disponíveis / em uso / manutenção / inativos / não localizados
+Espaços
+total / disponíveis / ocupados / indisponíveis
+Reservas
+hoje / futuras / em andamento / canceladas / no-show
+Ocorrências
+abertas / recentes / por gravidade / com manutenção
+Manutenção
+abertas / concluídas / recorrentes / tempo médio
+Estoque
+itens abaixo do mínimo / críticos
+Gráficos (apenas com informação relevante):
+utilização por laboratório
+utilização por equipamento
+reservas ao longo do tempo
+no-shows
+ocorrências
+manutenções
+equipamentos mais utilizados
+equipamentos com maior recorrência de manutenção
+Bloco "Em utilização agora":
+usuário
+recurso e laboratório
+horário de início e término previsto
+reserva relacionada
+Alertas do Dashboard:
+manutenção pendente
+ocorrência aberta
+inventário incompleto
+divergência de localização
+equipamento não localizado
+estoque baixo
+capacitação vencida
+reservas próximas
+no-shows
+ BLOCO 09 — OCORRÊNCIAS E MANUTENÇÃO 
+Preservar o fluxo atual:
+Check-out → condição → avaria → ocorrência → análise → manutenção → conclusão → disponibilidade
+Na ocorrência: abrir câmera, capturar evidência, associar à ocorrência.
+⚠ Não permitir selecionar imagem antiga da galeria nesse fluxo.
+Manutenção: registrar tipo, motivo, responsável, datas, laudo, custo.
+Enquanto em manutenção: bloquear reserva e utilização.
+Ao concluir: registrar laudo, liberar equipamento somente quando apropriado.
+ BLOCO 10 — HISTÓRICO E AUDITORIA 
+Registrar alterações relevantes:
+criação e edição
+mudança de laboratório
+alteração de status
+inativação
+inventário e divergência
+manutenção e ocorrência
+reserva e cancelamento
+decisão administrativa
+Sempre que possível: usuário, data/hora, ação, registro afetado.
+Tela do equipamento deve mostrar histórico consolidado:
+utilizações
+ocorrências
+manutenções
+movimentações
+alterações importantes
+⚠ Nunca remover histórico para facilitar implementação.
+ BLOCO 11 — CAPACITAÇÃO 
+Preservar controle existente. Se não autorizado:
+bloquear reserva
+bloquear utilização
+apresentar mensagem clara explicando o motivo
+ BLOCO 12 — CONSUMÍVEIS 
+cadastro com quantidade, unidade e estoque mínimo
+entrada e saída de estoque
+histórico de movimentações
+alerta quando quantidade <= estoque mínimo
+⚠ Nunca permitir estoque negativo.
+ BLOCO 13 — IMPORTAÇÃO E EXPORTAÇÃO 
+Importação em lote — CSV obrigatório, XLSX desejável.
+Campos: patrimônio UFPI, nome, categoria, marca, modelo, número de série, laboratório, localização, status, capacitação, observações.
+Validação antes de inserir:
+campos obrigatórios
+patrimônio repetido
+laboratório inexistente
+categoria e status inválidos
+Exibir prévia: "95 válidos / 3 duplicados / 2 com laboratório inexistente".
+⚠ Não inserir silenciosamente dados inválidos.
+Exportação: equipamentos, laboratórios, reservas, utilizações, ocorrências, manutenções, consumíveis, inventários. Preferir CSV.
+5. REGRAS ABSOLUTAS — RESUMO
+Fotos — Usuário
+Ocorrência / check-out / evidência: CÂMERA SOMENTE. Nunca galeria.
+Fotos — Admin
+Cadastro de equipamento: câmera OU galeria.
+QR Code
+Estável, identifica equipamento, sem dados pessoais, pode ser gerado individual ou em lote, imprimível e testável.
+Inventário
+QR escaneado → compara localização → Admin decide. Nunca mover automaticamente.
+Reservas
+Sem conflito. Manutenção bloqueia. Capacitação obrigatória. Recorrente verifica cada ocorrência. No-show preserva histórico.
+Check-out
+Condição obrigatória. Normal → disponível. Avaria → ocorrência → manutenção → desbloqueio manual.
+Histórico
+Nunca remover. Sobrevive a edições, inativação, cancelamentos, ocorrências.
+Inativação
+Nunca excluir equipamentos com histórico. Inativar, não deletar.
+Dashboard
+"O que está acontecendo agora?" + "O que precisa de atenção?"
+6. CRITÉRIO DE CONCLUSÃO DE CADA BLOCO
+Um bloco só está concluído quando:
+1. Código implementado
+2. Banco atualizado se necessário
+3. Frontend funcionando
+4. Backend funcionando
+5. Permissões verificadas
+6. Fluxo principal testado
+7. Erros principais tratados
+8. Dados históricos preservados
+9. Commit realizado
+10. Próxima etapa pode ser iniciada sem deixar este bloco quebrado
+7. ORDEM DE EXECUÇÃO
+FASE 1 — BASE
+Auditoria
+Correções estruturais necessárias
+FASE 2 — EQUIPAMENTOS
+Cadastro completo
+Inativação
+Identificadores (patrimônio UFPI vs código LabControl)
+Fotos administrativas
+FASE 3 — QR
+QR individual
+QR em lote
+Impressão de etiquetas
+Teste pós-instalação
+FASE 4 — INVENTÁRIO
+Inventário por laboratório
+Scanner QR
+Progresso
+Divergências
+Histórico da decisão
+FASE 5 — ESPAÇOS
+Página do laboratório completa
+Equipamentos do laboratório
+Agenda
+Modo monitor
+FASE 6 — RESERVAS
+Busca e filtros
+Calendário
+Recorrência
+Cancelamento individual de ocorrência
+Sugestões de horário
+No-show
+FASE 7 — UTILIZAÇÃO
+Check-in
+Check-out
+Condição obrigatória
+Evidência por câmera
+FASE 8 — OCORRÊNCIAS
+Ocorrência
+Foto de evidência
+Análise
+Manutenção
+Conclusão
+Retorno à disponibilidade
+FASE 9 — DASHBOARD
+KPIs completos
+Utilização atual
+Gráficos
+Alertas
+FASE 10 — RASTREABILIDADE
+Histórico
+Auditoria
+Movimentações
+Decisões administrativas
+FASE 11 — DADOS
+Importação
+Validação com prévia
+Exportação
+FASE 12 — UX
+Busca global
+Filtros avançados
+Estados vazios
+Mensagens de erro claras
+Responsividade mobile
+FASE 13 — RELATÓRIOS
+Inventário
+Utilização
+Reservas
+Ocorrências
+Manutenção
+Estoque
+FASE 14 — AVANÇADO
+Plano 2D do laboratório
+Notificações internas
+PWA (manifest + cache)
+Dados técnicos e documentos
+FASE 15 — EXPERIMENTAL
+OCR de patrimônio via câmera
+Funcionamento offline com sincronização
+Assistente de IA para indicadores
+8. FLUXO PRINCIPAL DO SISTEMA
+USUÁRIO → RESERVA → QR → CHECK-IN → UTILIZAÇÃO → CHECK-OUT → OCORRÊNCIA → MANUTENÇÃO → HISTÓRICO
+EQUIPAMENTO → PATRIMÔNIO → LOCALIZAÇÃO → INVENTÁRIO → QR → MOVIMENTAÇÃO → RASTREABILIDADE
+ESPAÇO → AGENDA → RESERVAS → UTILIZAÇÃO → MONITORAMENTO → INDICADORES
+Esses fluxos devem funcionar como partes de um único sistema — não como funcionalidades isoladas.
+9. REGRA FINAL PARA O DESENVOLVIMENTO
+⚠ Não interromper uma funcionalidade pela metade para começar outra.
+Primeiro tornar o fluxo atual estável. Depois evoluir.
+Sempre que a implementação revelar que a estrutura atual precisa ser adaptada:
+1. Explicar o problema
+2. Alterar o mínimo necessário
+3. Preservar compatibilidade
+4. Testar
+5. Criar commit
+6. Continuar
+O objetivo é terminar com um LabControl mais completo, coerente, estável e manutenível.

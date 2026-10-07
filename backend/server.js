@@ -20,6 +20,11 @@ const consumivelRoutes = require('./routes/consumivelRoutes');
 const capacitacaoRoutes = require('./routes/capacitacaoRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const tabelasRoutes = require('./routes/tabelasRoutes');
+const inventarioRoutes = require('./routes/inventarioRoutes');
+const integracaoRoutes = require('./routes/integracaoRoutes');
+const buscaRoutes = require('./routes/buscaRoutes');
+const notificacaoRoutes = require('./routes/notificacaoRoutes');
+const { startNoShowScheduler } = require('./services/noShowScheduler');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -28,7 +33,7 @@ const PORT = process.env.PORT || 3001;
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-LabControl-Category-Mappings']
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -56,6 +61,10 @@ app.use('/api/manutencoes', manutencaoRoutes);
 app.use('/api/consumiveis', consumivelRoutes);
 app.use('/api/capacitacoes', capacitacaoRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/inventarios', inventarioRoutes);
+app.use('/api/integracao', integracaoRoutes);
+app.use('/api/busca', buscaRoutes);
+app.use('/api/notificacoes', notificacaoRoutes);
 app.use('/tabelas', tabelasRoutes);
 
 // Rota 404 para endpoints inexistentes
@@ -79,4 +88,5 @@ app.listen(PORT, async () => {
   console.log(`  Ambiente: ${process.env.NODE_ENV || 'production'}`);
   console.log(`====================================================`);
   await testConnection();
+  startNoShowScheduler();
 });

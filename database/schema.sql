@@ -13,6 +13,7 @@ USE `labcontrol`;
 -- Desativa temporariamente checagens para recriação limpa
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS `configuracao_sistema`;
 DROP TABLE IF EXISTS `capacitacao`;
 DROP TABLE IF EXISTS `consumivel`;
 DROP TABLE IF EXISTS `manutencao`;
@@ -51,8 +52,11 @@ CREATE TABLE `espaco` (
   `codigo` VARCHAR(50) NOT NULL UNIQUE,
   `capacidade` INT NOT NULL DEFAULT 20,
   `localizacao` VARCHAR(150) NULL,
+  `responsavel` VARCHAR(100) NULL,
   `status` VARCHAR(30) NOT NULL DEFAULT 'disponivel',
   `descricao` TEXT NULL,
+  `foto_url` LONGTEXT NULL,
+  `regras_utilizacao` TEXT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_espaco_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -65,17 +69,57 @@ CREATE TABLE `equipamento` (
   `espaco_id` INT NOT NULL,
   `nome` VARCHAR(100) NOT NULL,
   `codigo_patrimonio` VARCHAR(50) NOT NULL UNIQUE,
+  `patrimonio_ufpi` VARCHAR(50) NULL,
+  `codigo_labcontrol` VARCHAR(50) NULL UNIQUE,
   `categoria` VARCHAR(50) NULL,
+  `marca` VARCHAR(100) NULL,
   `modelo` VARCHAR(100) NULL,
+  `especificacoes` TEXT NULL,
   `numero_serie` VARCHAR(100) NULL,
+  `data_aquisicao` DATE NULL,
+  `valor_aquisicao` DECIMAL(12,2) NULL,
+  `fornecedor` VARCHAR(160) NULL,
+  `garantia_ate` DATE NULL,
+  `garantia_detalhes` VARCHAR(500) NULL,
+  `localizacao_detalhada` VARCHAR(150) NULL,
   `status` VARCHAR(30) NOT NULL DEFAULT 'disponivel',
+  `inativo` TINYINT(1) NOT NULL DEFAULT 0,
+  `inativo_em` DATETIME NULL,
+  `inativo_por_usuario_id` INT NULL,
+  `motivo_inativacao` TEXT NULL,
   `exige_capacitacao` TINYINT(1) NOT NULL DEFAULT 0,
+  `observacoes` TEXT NULL,
+  `foto_url` LONGTEXT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_equipamento_espaco` (`espaco_id`),
   INDEX `idx_equipamento_status` (`status`),
+  INDEX `idx_equipamento_inativo` (`inativo`),
+  INDEX `idx_equipamento_labcontrol` (`codigo_labcontrol`),
+  INDEX `idx_equipamento_ufpi` (`patrimonio_ufpi`),
   CONSTRAINT `fk_equipamento_espaco`
     FOREIGN KEY (`espaco_id`) REFERENCES `espaco` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- 3.1 Tabela: equipamento_documento (Links de documentação técnica)
+-- --------------------------------------------------------
+CREATE TABLE `equipamento_documento` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `equipamento_id` INT NOT NULL,
+  `titulo` VARCHAR(160) NOT NULL,
+  `tipo` VARCHAR(40) NOT NULL,
+  `url` VARCHAR(2048) NOT NULL,
+  `descricao` VARCHAR(500) NULL,
+  `criado_por_usuario_id` INT NULL,
+  `criado_em` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_equipamento_documento_equipamento` (`equipamento_id`, `criado_em`),
+  CONSTRAINT `fk_equipamento_documento_equipamento`
+    FOREIGN KEY (`equipamento_id`) REFERENCES `equipamento` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_equipamento_documento_usuario`
+    FOREIGN KEY (`criado_por_usuario_id`) REFERENCES `usuario` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -84,15 +128,24 @@ CREATE TABLE `equipamento` (
 CREATE TABLE `reserva` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `usuario_id` INT NOT NULL,
-  `espaco_id` INT NOT NULL,
+  `espaco_id` INT NULL,
   `equipamento_id` INT NULL,
   `data_inicio` DATETIME NOT NULL,
   `data_fim` DATETIME NOT NULL,
   `finalidade` VARCHAR(255) NULL,
+  `observacoes` TEXT NULL,
   `status` VARCHAR(30) NOT NULL DEFAULT 'confirmada',
+  `grupo_recorrencia_id` VARCHAR(64) NULL,
+  `recorrente` TINYINT(1) NOT NULL DEFAULT 0,
+  `regra_recorrencia` VARCHAR(100) NULL,
+  `no_show` TINYINT(1) NOT NULL DEFAULT 0,
+  `no_show_at` DATETIME NULL,
+  `tolerancia_no_show_min` INT NOT NULL DEFAULT 15,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_reserva_datas` (`data_inicio`, `data_fim`),
   INDEX `idx_reserva_status` (`status`),
+  INDEX `idx_reserva_grupo_rec` (`grupo_recorrencia_id`),
+  INDEX `idx_reserva_no_show` (`no_show`),
   CONSTRAINT `fk_reserva_usuario`
     FOREIGN KEY (`usuario_id`) REFERENCES `usuario` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE,
@@ -117,6 +170,10 @@ CREATE TABLE `utilizacao` (
   `status` VARCHAR(30) NOT NULL DEFAULT 'em_uso',
   `condicao_retirada` VARCHAR(255) DEFAULT 'Operacional sem avarias',
   `condicao_devolucao` VARCHAR(255) NULL,
+  `foto_evidencia` LONGTEXT NULL,
+  `foto_metadata` TEXT NULL,
+  `houve_avaria` TINYINT(1) NOT NULL DEFAULT 0,
+  `relato_avaria` TEXT NULL,
   `observacoes` TEXT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_utilizacao_status` (`status`),
@@ -139,12 +196,19 @@ CREATE TABLE `ocorrencia` (
   `equipamento_id` INT NULL,
   `espaco_id` INT NULL,
   `usuario_id` INT NOT NULL,
+  `titulo` VARCHAR(150) NULL,
   `tipo` VARCHAR(50) NOT NULL DEFAULT 'defeito',
   `prioridade` VARCHAR(30) NOT NULL DEFAULT 'media',
+  `gravidade` VARCHAR(30) NOT NULL DEFAULT 'media',
+  `utilizacao_id` INT NULL,
   `descricao` TEXT NOT NULL,
+  `foto_evidencia` LONGTEXT NULL,
+  `foto_metadata` TEXT NULL,
   `status` VARCHAR(30) NOT NULL DEFAULT 'aberta',
   `data_registro` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `data_resolucao` DATETIME NULL,
+  `decisao_admin` TEXT NULL,
+  `data_decisao` DATETIME NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_ocorrencia_status` (`status`),
   CONSTRAINT `fk_ocorrencia_equipamento`
@@ -164,6 +228,7 @@ CREATE TABLE `ocorrencia` (
 CREATE TABLE `manutencao` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `equipamento_id` INT NOT NULL,
+  `ocorrencia_id` INT NULL,
   `tipo` VARCHAR(30) NOT NULL DEFAULT 'corretiva',
   `descricao` TEXT NOT NULL,
   `data_inicio` DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -174,9 +239,13 @@ CREATE TABLE `manutencao` (
   `laudo_tecnico` TEXT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_manutencao_status` (`status`),
+  INDEX `idx_manutencao_ocorrencia` (`ocorrencia_id`),
   CONSTRAINT `fk_manutencao_equipamento`
     FOREIGN KEY (`equipamento_id`) REFERENCES `equipamento` (`id`)
-    ON DELETE RESTRICT ON UPDATE CASCADE
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_manutencao_ocorrencia`
+    FOREIGN KEY (`ocorrencia_id`) REFERENCES `ocorrencia` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -216,6 +285,126 @@ CREATE TABLE `capacitacao` (
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- --------------------------------------------------------
+-- 10. Tabela: inventario (Sessões de inventário por laboratório)
+-- --------------------------------------------------------
+CREATE TABLE `inventario` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `espaco_id` INT NOT NULL,
+  `usuario_id` INT NOT NULL,
+  `status` VARCHAR(30) NOT NULL DEFAULT 'em_andamento',
+  `data_inicio` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `data_fim` DATETIME NULL,
+  `total_esperados` INT NOT NULL DEFAULT 0,
+  `total_conferidos` INT NOT NULL DEFAULT 0,
+  `total_divergentes` INT NOT NULL DEFAULT 0,
+  `total_nao_localizados` INT NOT NULL DEFAULT 0,
+  `observacoes` TEXT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_inventario_espaco` (`espaco_id`),
+  INDEX `idx_inventario_status` (`status`),
+  CONSTRAINT `fk_inventario_espaco`
+    FOREIGN KEY (`espaco_id`) REFERENCES `espaco` (`id`)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_inventario_usuario`
+    FOREIGN KEY (`usuario_id`) REFERENCES `usuario` (`id`)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- 11. Tabela: inventario_item (Itens conferidos e divergências)
+-- --------------------------------------------------------
+CREATE TABLE `inventario_item` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `inventario_id` INT NOT NULL,
+  `equipamento_id` INT NOT NULL,
+  `espaco_esperado_id` INT NOT NULL,
+  `espaco_encontrado_id` INT NOT NULL,
+  `status_conferencia` VARCHAR(30) NOT NULL DEFAULT 'conferido',
+  `decisao_admin` VARCHAR(50) NULL,
+  `decisao_usuario_id` INT NULL,
+  `decisao_data` DATETIME NULL,
+  `data_leitura` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_invitem_sessao` (`inventario_id`),
+  INDEX `idx_invitem_equip` (`equipamento_id`),
+  INDEX `idx_invitem_status` (`status_conferencia`),
+  CONSTRAINT `fk_invitem_inventario`
+    FOREIGN KEY (`inventario_id`) REFERENCES `inventario` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_invitem_equipamento`
+    FOREIGN KEY (`equipamento_id`) REFERENCES `equipamento` (`id`)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_invitem_espaco_esperado`
+    FOREIGN KEY (`espaco_esperado_id`) REFERENCES `espaco` (`id`)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_invitem_espaco_encontrado`
+    FOREIGN KEY (`espaco_encontrado_id`) REFERENCES `espaco` (`id`)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_invitem_decisao_usuario`
+    FOREIGN KEY (`decisao_usuario_id`) REFERENCES `usuario` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- 12. Tabela: configuracao_sistema (Configurações administrativas)
+-- --------------------------------------------------------
+CREATE TABLE `configuracao_sistema` (
+  `chave` VARCHAR(100) NOT NULL PRIMARY KEY,
+  `valor` VARCHAR(255) NOT NULL,
+  `atualizado_por_usuario_id` INT NULL,
+  `atualizado_em` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_config_sistema_usuario`
+    FOREIGN KEY (`atualizado_por_usuario_id`) REFERENCES `usuario` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- 13. Tabela: auditoria_evento (Trilha histórica append-only)
+-- --------------------------------------------------------
+CREATE TABLE `auditoria_evento` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `equipamento_id` INT NULL,
+  `entidade` VARCHAR(50) NOT NULL,
+  `entidade_id` VARCHAR(100) NULL,
+  `acao` VARCHAR(100) NOT NULL,
+  `usuario_id` INT NULL,
+  `detalhes` TEXT NULL,
+  `criado_em` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_auditoria_equipamento_data` (`equipamento_id`, `criado_em`),
+  INDEX `idx_auditoria_entidade` (`entidade`, `entidade_id`),
+  INDEX `idx_auditoria_usuario_data` (`usuario_id`, `criado_em`),
+  CONSTRAINT `fk_auditoria_usuario`
+    FOREIGN KEY (`usuario_id`) REFERENCES `usuario` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- 14. Tabela: notificacao (Caixa de entrada interna por usuário)
+-- --------------------------------------------------------
+CREATE TABLE `notificacao` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `usuario_id` INT NOT NULL,
+  `tipo` VARCHAR(40) NOT NULL,
+  `titulo` VARCHAR(160) NOT NULL,
+  `mensagem` VARCHAR(500) NOT NULL,
+  `link` VARCHAR(255) NULL,
+  `entidade` VARCHAR(50) NULL,
+  `entidade_id` VARCHAR(100) NULL,
+  `dedupe_key` VARCHAR(191) NULL,
+  `lida_em` DATETIME NULL,
+  `criada_em` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE INDEX `uq_notificacao_dedupe_key` (`dedupe_key`),
+  INDEX `idx_notificacao_usuario_data` (`usuario_id`, `criada_em`),
+  INDEX `idx_notificacao_usuario_lida` (`usuario_id`, `lida_em`),
+  CONSTRAINT `fk_notificacao_usuario`
+    FOREIGN KEY (`usuario_id`) REFERENCES `usuario` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `configuracao_sistema` (`chave`, `valor`)
+VALUES ('tolerancia_no_show_minutos', '15');
+
 -- ========================================================
 -- SEEDS INICIAIS (DADOS DE TESTE REALISTAS)
 -- Senhas:
@@ -235,13 +424,13 @@ INSERT INTO `espaco` (`id`, `nome`, `codigo`, `capacidade`, `localizacao`, `stat
 (3, 'Laboratório de Robótica e Automação', 'LAB-ROB-01', 25, 'Bloco A - Sala 102', 'disponivel', 'Bancadas industriais, braços robóticos e kits microcontrolados.'),
 (4, 'Laboratório de Química Analítica', 'LAB-QUI-01', 20, 'Bloco D - 1º Andar', 'manutencao', 'Capela de exaustão, reagentes e balanças de precisão analítica.');
 
-INSERT INTO `equipamento` (`id`, `espaco_id`, `nome`, `codigo_patrimonio`, `categoria`, `modelo`, `numero_serie`, `status`, `exige_capacitacao`) VALUES
-(1, 2, 'Impressora 3D Creality K1 Speed', 'PAT-2024-001', 'Fabricação Digital', 'Creality K1 600mm/s', 'CR-K1-99812', 'disponivel', 1),
-(2, 2, 'Cortadora e Gravadora a Laser CO2 60W', 'PAT-2024-002', 'Corte e Usinagem', 'LaserMaster 4060', 'LM-60W-3312', 'em_uso', 1),
-(3, 3, 'Osciloscópio Digital Tektronix 50MHz', 'PAT-2024-003', 'Instrumentação', 'TBS1052B-EDU', 'TEK-50-8472', 'disponivel', 0),
-(4, 3, 'Braço Robótico Dobot Magician', 'PAT-2024-004', 'Robótica', 'Dobot Basic V2', 'DOBOT-1029', 'disponivel', 1),
-(5, 4, 'Microscópio Óptico Binocular Nikon', 'PAT-2024-005', 'Óptica', 'Eclipse E100', 'NK-88219', 'manutencao', 0),
-(6, 2, 'Estação de Solda Digital AFR 936', 'PAT-2024-006', 'Eletrônica', 'AFR 936 ESD', 'AFR-7721', 'disponivel', 0);
+INSERT INTO `equipamento` (`id`, `espaco_id`, `nome`, `codigo_patrimonio`, `patrimonio_ufpi`, `codigo_labcontrol`, `categoria`, `marca`, `modelo`, `numero_serie`, `localizacao_detalhada`, `status`, `exige_capacitacao`) VALUES
+(1, 2, 'Impressora 3D Creality K1 Speed', 'PAT-2024-001', 'UFPI-PAT-001', 'LC-EQ-0001', 'Fabricação Digital', 'Creality', 'Creality K1 600mm/s', 'CR-K1-99812', 'Bancada 01 - Fabricação Digital', 'disponivel', 1),
+(2, 2, 'Cortadora e Gravadora a Laser CO2 60W', 'PAT-2024-002', 'UFPI-PAT-002', 'LC-EQ-0002', 'Corte e Usinagem', 'LaserMaster', 'LaserMaster 4060', 'LM-60W-3312', 'Área de Corte Fechada', 'em_uso', 1),
+(3, 3, 'Osciloscópio Digital Tektronix 50MHz', 'PAT-2024-003', 'UFPI-PAT-003', 'LC-EQ-0003', 'Instrumentação', 'Tektronix', 'TBS1052B-EDU', 'TEK-50-8472', 'Bancada de Eletrônica 02', 'disponivel', 0),
+(4, 3, 'Braço Robótico Dobot Magician', 'PAT-2024-004', 'UFPI-PAT-004', 'LC-EQ-0004', 'Robótica', 'Dobot', 'Dobot Basic V2', 'DOBOT-1029', 'Célula de Automação A', 'disponivel', 1),
+(5, 4, 'Microscópio Óptico Binocular Nikon', 'PAT-2024-005', 'UFPI-PAT-005', 'LC-EQ-0005', 'Óptica', 'Nikon', 'Eclipse E100', 'NK-88219', 'Bancada Central de Óptica', 'manutencao', 0),
+(6, 2, 'Estação de Solda Digital AFR 936', 'PAT-2024-006', 'UFPI-PAT-006', 'LC-EQ-0006', 'Eletrônica', 'AFR', 'AFR 936 ESD', 'AFR-7721', 'Bancada de Montagem Rápida', 'disponivel', 0);
 
 INSERT INTO `reserva` (`id`, `usuario_id`, `espaco_id`, `equipamento_id`, `data_inicio`, `data_fim`, `finalidade`, `status`) VALUES
 (1, 2, 2, 2, DATE_SUB(NOW(), INTERVAL 1 HOUR), DATE_ADD(NOW(), INTERVAL 2 HOUR), 'Aula prática de Prototipagem Rápida', 'em_andamento'),
