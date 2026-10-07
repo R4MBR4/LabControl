@@ -33,6 +33,12 @@ async function getById(req, res) {
     if (!ocorrencia) {
       return res.status(404).json({ error: 'Ocorrência não encontrada' });
     }
+    const userRole = (req.user.perfil || '').toLowerCase();
+    const isAdmin = userRole === 'admin' || userRole === 'administrador';
+    const ownerId = ocorrencia.usuario_id || ocorrencia.id_usuario;
+    if (!isAdmin && String(ownerId) !== String(req.user.id)) {
+      return res.status(404).json({ error: 'Ocorrência não encontrada' });
+    }
     res.json(ocorrencia);
   } catch (err) {
     console.error('[Ocorrencia] Erro ao buscar:', err);

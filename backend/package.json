@@ -19,6 +19,7 @@
     "test:seguranca-auth": "node teste-seguranca-autenticacao.js",
     "test:acesso-capacitacoes": "node teste-acesso-capacitacoes.js",
     "test:integracao-acesso-capacitacoes": "node teste-integracao-acesso-capacitacoes.js",
+    "test:acesso-registros-usuario": "node teste-acesso-registros-usuario.js",
     "test:visualizador-tabelas-auth": "node teste-visualizador-tabelas-auth.js"
   },
   "dependencies": {

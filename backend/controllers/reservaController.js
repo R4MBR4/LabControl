@@ -35,15 +35,8 @@ async function list(req, res) {
     const userRole = (req.user?.perfil || '').toLowerCase();
     const isPrivileged = userRole === 'admin' || userRole === 'administrador' || userRole === 'docente' || userRole === 'professor';
 
-    // Se for usuário comum e não especificar filtro, lista prioritariamente suas reservas
     if (!isPrivileged) {
-      // Usuário comum pode visualizar a disponibilidade geral se passar filtro explícito,
-      // mas por padrão lista suas próprias reservas
-      if (req.query.usuario_id) {
-        filters.usuario_id = req.user.id;
-      } else if (!req.query.data_inicio_de && !req.query.status) {
-        filters.usuario_id = req.user.id;
-      }
+      filters.usuario_id = req.user.id;
     } else if (req.query.usuario_id) {
       filters.usuario_id = req.query.usuario_id;
     }
@@ -117,6 +110,12 @@ async function getById(req, res) {
   try {
     const reserva = await reservaModel.getReservaById(req.params.id);
     if (!reserva) {
+      return res.status(404).json({ error: 'Reserva não encontrada' });
+    }
+    const userRole = (req.user?.perfil || '').toLowerCase();
+    const isPrivileged = ['admin', 'administrador', 'docente', 'professor'].includes(userRole);
+    const ownerId = reserva.usuario_id || reserva.id_usuario;
+    if (!isPrivileged && String(ownerId) !== String(req.user?.id)) {
       return res.status(404).json({ error: 'Reserva não encontrada' });
     }
     res.json(reserva);

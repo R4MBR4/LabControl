@@ -33,6 +33,12 @@ async function getById(req, res) {
     if (!item) {
       return res.status(404).json({ error: 'Registro de utilização não encontrado' });
     }
+    const userRole = (req.user.perfil || '').toLowerCase();
+    const isAdmin = userRole === 'admin' || userRole === 'administrador';
+    const ownerId = item.usuario_id || item.id_usuario;
+    if (!isAdmin && String(ownerId) !== String(req.user.id)) {
+      return res.status(404).json({ error: 'Registro de utilização não encontrado' });
+    }
     res.json(item);
   } catch (err) {
     console.error('[Utilizacao] Erro ao buscar:', err);
