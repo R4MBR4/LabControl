@@ -10,7 +10,7 @@ async function list(req, res) {
     if (userRole === 'admin' || userRole === 'administrador') {
       itens = await capacitacaoModel.getAllCapacitacoes();
     } else {
-      itens = await capacitacaoModel.getCapacitacoesByUser(req.user.id);
+      itens = await capacitacaoModel.getCapacitacoesByUser(req.user.id || req.user.id_usuario, req.user);
     }
 
     res.json(itens);
@@ -32,7 +32,7 @@ async function getByUser(req, res) {
     }
 
     const userId = isAdmin && requestedUserId ? requestedUserId : currentUserId;
-    const itens = await capacitacaoModel.getCapacitacoesByUser(userId);
+    const itens = await capacitacaoModel.getCapacitacoesByUser(userId, req.user);
     res.json(itens);
   } catch (err) {
     console.error('[Capacitacao] Erro ao buscar:', err);

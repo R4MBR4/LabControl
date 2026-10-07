@@ -78,6 +78,13 @@ async function testAdminCanReadAnotherUsersTraining() {
   await testUserCanReadOwnTraining();
   await testUserCannotReadAnotherUsersTraining();
   await testAdminCanReadAnotherUsersTraining();
+  assert.throws(
+    () => capacitacaoModel.assertCanReadUserCapacitacoes(99, { id: 12, perfil: 'usuario' }),
+    (error) => error.statusCode === 403
+  );
+  assert.doesNotThrow(
+    () => capacitacaoModel.assertCanReadUserCapacitacoes(99, { id: 1, perfil: 'administrador' })
+  );
   console.log('Testes de autorização de consulta de capacitações passaram.');
 })().catch((error) => {
   console.error(error);

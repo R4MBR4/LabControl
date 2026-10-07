@@ -23,7 +23,25 @@ async function getAllCapacitacoes() {
   return rows;
 }
 
-async function getCapacitacoesByUser(userId) {
+function assertCanReadUserCapacitacoes(userId, requester) {
+  if (!requester || (!requester.id && !requester.id_usuario)) {
+    const error = new Error('Usuário solicitante inválido para consultar capacitações.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const requesterId = requester.id || requester.id_usuario;
+  const role = String(requester.perfil || '').toLowerCase();
+  const isAdmin = role === 'admin' || role === 'administrador';
+  if (!isAdmin && String(requesterId) !== String(userId)) {
+    const error = new Error('Você não tem permissão para consultar as capacitações deste usuário.');
+    error.statusCode = 403;
+    throw error;
+  }
+}
+
+async function getCapacitacoesByUser(userId, requester) {
+  assertCanReadUserCapacitacoes(userId, requester);
   const pk = await getPrimaryKey(TABLE);
   const equipPk = await getPrimaryKey('equipamento');
   const fkUser = await resolveColumn(TABLE, ['usuario_id', 'id_usuario']);
@@ -86,6 +104,7 @@ module.exports = {
   TABLE,
   getAllCapacitacoes,
   getCapacitacoesByUser,
+  assertCanReadUserCapacitacoes,
   checkUserCapacitacao,
   createCapacitacao,
   updateCapacitacao,
