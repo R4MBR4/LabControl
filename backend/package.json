@@ -16,7 +16,8 @@
     "test:relatorios": "node teste-relatorios.js",
     "test:notificacoes": "node teste-notificacoes-internas.js",
     "test:dados-tecnicos": "node teste-dados-tecnicos.js",
-    "test:seguranca-auth": "node teste-seguranca-autenticacao.js"
+    "test:seguranca-auth": "node teste-seguranca-autenticacao.js",
+    "test:acesso-capacitacoes": "node teste-acesso-capacitacoes.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

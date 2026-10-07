@@ -22,7 +22,16 @@ async function list(req, res) {
 
 async function getByUser(req, res) {
   try {
-    const userId = req.params.userId || req.user.id;
+    const role = (req.user.perfil || '').toLowerCase();
+    const isAdmin = role === 'admin' || role === 'administrador';
+    const requestedUserId = req.params.userId;
+    const currentUserId = req.user.id || req.user.id_usuario;
+
+    if (requestedUserId && String(requestedUserId) !== String(currentUserId) && !isAdmin) {
+      return res.status(403).json({ error: 'Você não tem permissão para consultar as capacitações deste usuário.' });
+    }
+
+    const userId = isAdmin && requestedUserId ? requestedUserId : currentUserId;
     const itens = await capacitacaoModel.getCapacitacoesByUser(userId);
     res.json(itens);
   } catch (err) {
