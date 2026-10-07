@@ -134,6 +134,9 @@ LabControl/
 15. **Decisões de divergência de inventário:**
    Administradores podem abrir os detalhes do equipamento diretamente pela divergência. As decisões de transferir ou manter a localização ficam na auditoria com equipamento, espaços anterior/novo, responsável e data/hora; a transferência e seus eventos de auditoria são gravados na mesma transação. Não é necessária migration adicional: as colunas de decisão e a tabela `auditoria_evento` já existem.
 
+16. **Modo escuro:**
+   A preferência de tema pode ser alternada pelo botão na barra superior, aplica-se às páginas e componentes do sistema e fica salva localmente neste navegador. O tema claro continua sendo o padrão para quem ainda não escolheu uma preferência.
+
 ---
 
 ## 🚀 Como Executar o Projeto

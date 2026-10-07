@@ -19,13 +19,17 @@ import {
   User as UserIcon,
   ClipboardCheck,
   FileBarChart2,
-  Search
+  Search,
+  Moon,
+  Sun
 } from 'lucide-react';
 import BuscaGlobal from './BuscaGlobal';
 import Notificacoes from './Notificacoes';
+import { useTheme } from '../context/ThemeContext';
 
 export default function Navbar() {
   const { user, isAdmin, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -99,6 +103,15 @@ export default function Navbar() {
           </div>
 
           <Notificacoes />
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro'}
+            title={theme === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro'}
+            className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+          >
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
 
           {/* Lado Direito Desktop: Perfil do Usuário e Botão Sair com Ícone (como antes) */}
           <div className="hidden lg:flex items-center gap-1.5 shrink-0 pl-2 border-l border-slate-200">

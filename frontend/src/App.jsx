@@ -1,6 +1,7 @@
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Navbar from './components/Navbar';
 
@@ -59,20 +60,22 @@ function LayoutWithNavbar() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <HashRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          
-          {/* Modo Monitor dedicado para exibição em tablets/TVs */}
-          <Route path="/espacos/:id/monitor" element={<EspacoMonitor />} />
+    <ThemeProvider>
+      <AuthProvider>
+        <HashRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            
+            {/* Modo Monitor dedicado para exibição em tablets/TVs */}
+            <Route path="/espacos/:id/monitor" element={<EspacoMonitor />} />
 
-          {/* Rotas protegidas gerais com layout padrão */}
-          <Route element={<ProtectedRoute />}>
-            <Route path="/*" element={<LayoutWithNavbar />} />
-          </Route>
-        </Routes>
-      </HashRouter>
-    </AuthProvider>
+            {/* Rotas protegidas gerais com layout padrão */}
+            <Route element={<ProtectedRoute />}>
+              <Route path="/*" element={<LayoutWithNavbar />} />
+            </Route>
+          </Routes>
+        </HashRouter>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
