@@ -6,6 +6,7 @@ process.env.JWT_SECRET = 'test-only-secret-for-table-viewer-authorization';
 
 const { generateToken } = require('./middlewares/auth');
 const { pool } = require('./config/db');
+const usuarioModel = require('./models/usuarioModel');
 const tabelasRoutes = require('./routes/tabelasRoutes');
 
 async function request(server, token) {
@@ -36,8 +37,15 @@ async function testTableViewerRequiresAdmin() {
     server.once('error', reject);
   });
   const originalQuery = pool.query;
+  const originalGetUserById = usuarioModel.getUserById;
   let queryCount = 0;
 
+  usuarioModel.getUserById = async (id) => ({
+    id,
+    nome: id === 1 ? 'Admin' : 'Usuário',
+    perfil: id === 1 ? 'administrador' : 'usuario',
+    status: 'ativo'
+  });
   pool.query = async (sql) => {
     queryCount += 1;
     if (sql === 'SHOW TABLES;') return [[{ Tables_in_labcontrol: 'usuario' }]];
@@ -63,6 +71,7 @@ async function testTableViewerRequiresAdmin() {
     assert.equal(queryCount, 3);
   } finally {
     pool.query = originalQuery;
+    usuarioModel.getUserById = originalGetUserById;
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 }

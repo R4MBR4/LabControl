@@ -1,5 +1,5 @@
 const usuarioModel = require('../models/usuarioModel');
-const { generateToken } = require('../middlewares/auth');
+const { generateToken, isUserActive } = require('../middlewares/auth');
 
 async function login(req, res) {
   try {
@@ -20,7 +20,7 @@ async function login(req, res) {
       return res.status(401).json({ error: 'Credenciais inválidas' });
     }
 
-    if (user.ativo !== undefined && (user.ativo === 0 || user.ativo === false)) {
+    if (!isUserActive(user)) {
       return res.status(403).json({ error: 'Usuário inativo. Contate o administrador.' });
     }
 
