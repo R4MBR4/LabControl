@@ -6,6 +6,7 @@ node_modules/
 .env
 backend/.env
 frontend/.env.local
+database/*.txt
 
 # Builds de produção
 dist/

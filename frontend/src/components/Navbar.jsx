@@ -52,7 +52,7 @@ export default function Navbar() {
   ];
 
   if (isAdmin) {
-    navLinks.push({ name: 'Inventário QR', path: '/inventario', icon: ClipboardCheck });
+    navLinks.push({ name: 'Inventário Físico', path: '/inventario', icon: ClipboardCheck });
     navLinks.push({ name: 'Relatórios', path: '/relatorios', icon: FileBarChart2 });
     navLinks.push({ name: 'Manutenção', path: '/manutencao', icon: Wrench });
     navLinks.push({ name: 'Usuários', path: '/usuarios', icon: Users });
@@ -170,7 +170,8 @@ export default function Navbar() {
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-1.5 rounded-lg text-slate-700 hover:bg-slate-100 border border-slate-200 transition cursor-pointer"
-              aria-label="Abrir menu"
+              aria-label={mobileMenuOpen ? 'Fechar menu de navegação' : 'Abrir menu de navegação'}
+              aria-expanded={mobileMenuOpen}
             >
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>

@@ -55,7 +55,10 @@ async function list(req, res) {
     res.json(reservas);
   } catch (err) {
     console.error('[Reserva] Erro ao listar:', err.message);
-    res.status(500).json({ error: 'Erro ao listar reservas: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao listar reservas',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 }
 
@@ -130,7 +133,7 @@ async function create(req, res) {
   let transactionStarted = false;
 
   try {
-    const { equipamento_id, espaco_id, data_inicio, data_fim, finalidade, observacoes } = req.body;
+    const { equipamento_id, espaco_id, data_inicio, data_fim, finalidade, observacoes, tipo, disciplina, turma } = req.body;
     const usuario_id = req.user.id;
 
     if (!data_inicio || !data_fim) {
@@ -184,6 +187,21 @@ async function create(req, res) {
       }
     }
 
+    // Regra 2.5: Validação formal de horário de funcionamento e status do espaço (Fase B)
+    const espacoModel = require('../models/espacoModel');
+    if (finalEspacoId) {
+      const espaco = await espacoModel.getEspacoById(finalEspacoId);
+      if (!espaco && espaco_id) {
+        return res.status(404).json({ error: 'Espaço selecionado não existe' });
+      }
+      if (espaco) {
+        const valHorario = espacoModel.validarHorarioFuncionamento(espaco, data_inicio, data_fim);
+        if (!valHorario.valido) {
+          return res.status(400).json({ error: valHorario.erro });
+        }
+      }
+    }
+
     // Regra 3: Prevenção matemática de conflito de horário
     const conflitos = await reservaModel.checkConflict({
       equipamento_id: equipamento_id || null,
@@ -217,6 +235,9 @@ async function create(req, res) {
       data_inicio,
       data_fim,
       status: 'confirmada',
+      tipo: tipo || 'comum',
+      disciplina: disciplina || null,
+      turma: turma || null,
       finalidade: finalidade || null,
       observacoes: observacoes || null
     };
@@ -253,7 +274,10 @@ async function create(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Reserva] Erro ao criar:', err);
-    res.status(500).json({ error: 'Erro ao criar reserva: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao criar reserva',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -369,6 +393,9 @@ async function createRecorrente(req, res) {
       data_fim_serie,
       hora_inicio,
       hora_fim,
+      tipo,
+      disciplina,
+      turma
     } = req.body;
 
     const usuario_id = req.user.id;
@@ -449,6 +476,9 @@ async function createRecorrente(req, res) {
       ocorrencias,
       finalidade,
       observacoes,
+      tipo: tipo || 'comum',
+      disciplina: disciplina || null,
+      turma: turma || null,
       regra_recorrencia: `semanal:${diasPermitidos.join(',')}`,
       tolerancia_no_show_min: await reservaModel.getToleranciaNoShow(),
       executor: connection
@@ -480,7 +510,10 @@ async function createRecorrente(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Reserva Recorrente] Erro:', err);
-    res.status(500).json({ error: 'Erro ao criar série recorrente: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao criar série recorrente',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -492,7 +525,10 @@ async function getToleranciaNoShow(req, res) {
     res.json({ tolerancia_no_show_min });
   } catch (err) {
     console.error('[Reserva] Erro ao carregar tolerância de no-show:', err);
-    res.status(500).json({ error: 'Erro ao carregar configuração de no-show: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao carregar configuração de no-show',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 }
 
@@ -524,7 +560,10 @@ async function updateToleranciaNoShow(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Reserva] Erro ao salvar tolerância de no-show:', err);
-    res.status(500).json({ error: 'Erro ao salvar configuração de no-show: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao salvar configuração de no-show',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -571,16 +610,34 @@ async function cancelarRecorrente(req, res) {
       detalhes: {
         tipo: resultado?.tipo || tipo,
         afetadas: resultado?.afetadas || 0,
-        grupo_recorrencia_id: reserva.grupo_recorrencia_id || null
+        grupo_recorrencia_id: reserva.grupo_recorrencia_id || null,
+        tipo_reserva: reserva.tipo || 'comum'
       }
     }, connection);
+
+    // Se for cancelamento de aula de turma, notifica admin/coordenação que o horário está liberado
+    if ((reserva.tipo || '').toLowerCase() === 'aula') {
+      await notificacaoModel.createForRole('admin', {
+        tipo: 'aula_cancelada',
+        titulo: 'Aula cancelada - horário liberado',
+        mensagem: `Uma aula (${reserva.disciplina || reserva.finalidade || 'Aula'}) foi cancelada. O horário correspondente foi liberado para novos agendamentos sem aplicação de no-show.`,
+        link: '/reservas',
+        entidade: 'reserva',
+        entidade_id: id,
+        dedupe_key: `aula_cancelada_liberada:${id}`
+      }, connection, req.user.id);
+    }
+
     await connection.commit();
     transactionStarted = false;
     res.json({ message: 'Cancelamento efetuado com sucesso', ...resultado });
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Reserva] Erro ao cancelar ocorrência:', err);
-    res.status(500).json({ error: 'Erro ao cancelar ocorrência: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao cancelar ocorrência',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -622,7 +679,10 @@ async function marcarNoShow(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Reserva] Erro ao marcar no-show:', err);
-    res.status(500).json({ error: 'Erro ao registrar no-show: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao registrar no-show',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -667,9 +727,124 @@ async function verificarNoShows(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Reserva] Erro na verificação de no-shows:', err);
-    res.status(500).json({ error: 'Erro ao verificar no-shows: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao verificar no-shows',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
+  }
+}
+
+/**
+ * Extensão / Prorrogação formal de reserva (Fase B)
+ */
+async function estender(req, res) {
+  let connection;
+  let transactionStarted = false;
+
+  try {
+    const id = req.params.id;
+    const { minutos, justificativa } = req.body;
+    const userRole = (req.user?.perfil || '').toLowerCase();
+    const isPrivileged = ['admin', 'administrador', 'docente', 'professor'].includes(userRole);
+
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    const resultado = await reservaModel.estenderReserva({
+      id,
+      minutos: Number(minutos) || 15,
+      justificativa,
+      usuarioId: req.user.id,
+      isPrivileged,
+      executor: connection
+    });
+
+    if (!resultado.success) {
+      await connection.rollback();
+      transactionStarted = false;
+
+      // Se a extensão foi recusada devido a próxima reserva, notifica o usuário orientando encerramento
+      if (resultado.motivo === 'conflito_proxima_reserva') {
+        await notificacaoModel.createForUser({
+          usuario_id: req.user.id,
+          tipo: 'extensao_recusada',
+          titulo: 'Extensão de horário não autorizada',
+          mensagem: resultado.error,
+          link: '/reservas',
+          entidade: 'reserva',
+          entidade_id: id,
+          dedupe_key: `extensao_recusada:${id}:${Date.now()}`
+        }, pool);
+      }
+
+      return res.status(resultado.status || 400).json(resultado);
+    }
+
+    // Registra auditoria
+    await auditoriaModel.registrarEvento({
+      equipamento_id: resultado.reserva.equipamento_id || null,
+      entidade: 'reserva',
+      entidade_id: id,
+      acao: 'reserva_estendida',
+      usuario_id: req.user.id,
+      detalhes: {
+        data_fim_anterior: resultado.data_fim_anterior,
+        data_fim_nova: resultado.data_fim_nova,
+        minutos_estendidos: resultado.minutos_estendidos,
+        justificativa: justificativa || null
+      }
+    }, connection);
+
+    // Notifica usuário com instrução clara
+    await notificacaoModel.createForUser({
+      usuario_id: req.user.id,
+      tipo: 'extensao_aprovada',
+      titulo: 'Reserva estendida com sucesso',
+      mensagem: `Sua reserva #${id} foi estendida com sucesso até ${new Date(resultado.data_fim_nova).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`,
+      link: '/reservas',
+      entidade: 'reserva',
+      entidade_id: id,
+      dedupe_key: `extensao_aprovada:${id}:${resultado.data_fim_nova}`
+    }, connection);
+
+    await connection.commit();
+    transactionStarted = false;
+
+    res.json({
+      message: 'Reserva estendida com sucesso!',
+      ...resultado
+    });
+  } catch (err) {
+    if (connection && transactionStarted) await connection.rollback();
+    console.error('[Reserva] Erro ao estender reserva:', err);
+    res.status(500).json({
+      error: 'Erro ao estender reserva',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+/**
+ * Disparo e verificação de avisos de horário (Fase B)
+ */
+async function verificarAvisos(req, res) {
+  try {
+    const resultado = await reservaModel.verificarAvisosHorario();
+    res.json({
+      message: 'Verificação de avisos de horário concluída.',
+      ...resultado
+    });
+  } catch (err) {
+    console.error('[Reserva] Erro ao verificar avisos de horário:', err);
+    res.status(500).json({
+      error: 'Erro ao verificar avisos de horário',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 }
 
@@ -685,5 +860,7 @@ module.exports = {
   updateToleranciaNoShow,
   cancelarRecorrente,
   marcarNoShow,
-  verificarNoShows
+  verificarNoShows,
+  estender,
+  verificarAvisos
 };

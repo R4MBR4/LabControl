@@ -434,7 +434,10 @@ async function importEquipmentCsv(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Integração] Erro ao importar equipamentos:', err);
-    res.status(500).json({ error: 'Erro ao importar equipamentos: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao importar equipamentos',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -460,7 +463,10 @@ async function exportCsv(req, res) {
     res.send(csv);
   } catch (err) {
     console.error(`[Integração] Erro ao exportar ${req.params.dataset}:`, err);
-    res.status(500).json({ error: 'Erro ao gerar exportação CSV: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao gerar exportação CSV',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 }
 

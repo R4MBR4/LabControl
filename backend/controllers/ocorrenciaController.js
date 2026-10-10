@@ -18,6 +18,10 @@ async function list(req, res) {
 
     if (req.query.equipamento_id) filters.equipamento_id = req.query.equipamento_id;
     if (req.query.status) filters.status = req.query.status;
+    if (req.query.espaco_id) filters.espaco_id = req.query.espaco_id;
+    if (req.query.gravidade) filters.gravidade = req.query.gravidade;
+    if (req.query.data_inicio_de) filters.data_inicio_de = req.query.data_inicio_de;
+    if (req.query.data_fim_ate) filters.data_fim_ate = req.query.data_fim_ate;
 
     const ocorrencias = await ocorrenciaModel.getAllOcorrencias(filters);
     res.json(ocorrencias);

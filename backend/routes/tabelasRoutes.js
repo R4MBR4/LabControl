@@ -35,10 +35,10 @@ router.get('/', async (req, res) => {
       <div>
         <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 mb-2">
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          Conectado ao TiDB Cloud (AWS São Paulo)
+          Banco de Dados Conectado
         </div>
         <h1 class="text-2xl font-bold tracking-tight">Visualizador de Tabelas do Banco de Dados</h1>
-        <p class="text-slate-400 text-xs mt-1">Base ativa: <span class="font-mono text-emerald-400 font-semibold">${process.env.DB_NAME || 'labcontrol'}</span> | Host: <span class="font-mono text-slate-300">${process.env.DB_HOST}</span></p>
+        <p class="text-slate-400 text-xs mt-1">Base ativa: <span class="font-mono text-emerald-400 font-semibold">${process.env.DB_NAME || 'labcontrol'}</span></p>
       </div>
       <a href="http://localhost:3000" class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold rounded-xl transition shadow">
         Ir para a Plataforma Web →
@@ -81,7 +81,7 @@ router.get('/', async (req, res) => {
                   let val = r[c];
                   if (val === null || val === undefined) val = '<span class="text-slate-300 italic">null</span>';
                   else if (typeof val === 'object') val = JSON.stringify(val);
-                  else if (c === 'senha') val = '<span class="font-mono text-[10px] text-slate-400">●●●●●● (hash bcrypt)</span>';
+                  else if (c === 'senha' || c === 'password') val = '<span class="font-mono text-[10px] text-slate-400">•••••• (protegido)</span>';
                   return `<td class="p-3 border-r border-slate-100 last:border-0">${val}</td>`;
                 }).join('')}
               </tr>

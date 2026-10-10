@@ -43,17 +43,23 @@ export default function QRScanner({ onScan, placeholder = "EQ-001 ou ID do equip
 
   const handleDetected = (text) => {
     setScanError(null);
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return;
+
     try {
-      // Tenta parsear caso seja um JSON gerado pelo LabControl
-      const parsed = JSON.parse(text);
-      if (parsed.id || parsed.codigo) {
-        onScan(parsed.id ? String(parsed.id) : parsed.codigo, parsed);
+      // Tenta parsear caso seja um JSON estruturado gerado pelo LabControl
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object') {
+        const primaryIdentifier = parsed.id
+          ? String(parsed.id)
+          : (parsed.codigo_labcontrol || parsed.patrimonio_ufpi || parsed.codigo || trimmed);
+        onScan(primaryIdentifier, parsed, trimmed);
         return;
       }
     } catch {
-      // É uma string simples (código patrimônio ou ID)
+      // É uma string simples (código LabControl, patrimônio ou ID)
     }
-    onScan(text.trim());
+    onScan(trimmed, null, trimmed);
   };
 
   const handleManualSubmit = (e) => {

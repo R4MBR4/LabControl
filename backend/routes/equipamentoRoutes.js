@@ -6,6 +6,12 @@ const { authenticateToken, authorizeAdmin } = require('../middlewares/auth');
 
 router.use(authenticateToken);
 
+// Identificação inequívoca via QR e geração de etiquetas em lote
+router.post('/identificar-qr', equipamentoController.identificarQR);
+router.get('/identificar-qr', equipamentoController.identificarQR);
+router.post('/etiquetas-lote', equipamentoController.gerarEtiquetasLote);
+router.get('/etiquetas-lote', equipamentoController.gerarEtiquetasLote);
+
 // Consulta, Histórico e QR Code disponíveis para todos os usuários
 router.get('/', equipamentoController.list);
 router.get('/:id', equipamentoController.getById);

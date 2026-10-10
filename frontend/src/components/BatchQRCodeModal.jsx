@@ -95,15 +95,19 @@ export default function BatchQRCodeModal({ isOpen, onClose, equipamentos = [] })
             {equipamentos.map((equip) => {
               const equipId = equip.id || equip.id_equipamento;
               const codigoLab = equip.codigo_labcontrol || `LC-EQ-${String(equipId).padStart(4, '0')}`;
-              const codigoUfpi = equip.patrimonio_ufpi || equip.codigo_patrimonio || equip.codigo || `UFPI-${equipId}`;
+              const patrimonioUfpi = equip.patrimonio_ufpi || null;
 
-              const qrPayload = JSON.stringify({
+              const payloadObj = {
                 id: equipId,
                 codigo_labcontrol: codigoLab,
-                patrimonio_ufpi: codigoUfpi,
                 nome: equip.nome,
                 action: 'LABCONTROL_CHECKIN_CHECKOUT'
-              });
+              };
+              if (patrimonioUfpi) {
+                payloadObj.patrimonio_ufpi = patrimonioUfpi;
+              }
+
+              const qrPayload = JSON.stringify(payloadObj);
 
               return (
                 <div
@@ -150,15 +154,21 @@ export default function BatchQRCodeModal({ isOpen, onClose, equipamentos = [] })
                         </span>
                       </div>
 
-                      {/* Patrimônio Oficial */}
+                      {/* Patrimônio Oficial UFPI (apenas quando disponível) */}
                       <div>
                         <span className="text-[9px] uppercase tracking-wider font-semibold text-slate-400 block">
                           Patrimônio UFPI
                         </span>
-                        <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-300">
-                          <Tag className="w-3 h-3 text-slate-500" />
-                          {codigoUfpi}
-                        </span>
+                        {patrimonioUfpi ? (
+                          <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-300">
+                            <Tag className="w-3 h-3 text-slate-500" />
+                            {patrimonioUfpi}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center text-[10px] text-slate-400 italic">
+                            Não cadastrado
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

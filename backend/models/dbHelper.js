@@ -87,17 +87,17 @@ async function remove(tableName, id, executor = pool) {
 /**
  * Busca registro por ID
  */
-async function findById(tableName, id) {
+async function findById(tableName, id, executor = pool) {
   const pk = await getPrimaryKey(tableName);
   const sql = `SELECT * FROM \`${tableName}\` WHERE \`${pk}\` = ? LIMIT 1`;
-  const [rows] = await pool.query(sql, [id]);
+  const [rows] = await executor.query(sql, [id]);
   return rows[0] || null;
 }
 
 /**
  * Busca todos os registros com filtro opcional
  */
-async function findAll(tableName, conditions = {}, orderBy = null) {
+async function findAll(tableName, conditions = {}, orderBy = null, executor = pool) {
   let sql = `SELECT * FROM \`${tableName}\``;
   const values = [];
 
@@ -112,7 +112,7 @@ async function findAll(tableName, conditions = {}, orderBy = null) {
     sql += ` ORDER BY ${orderBy}`;
   }
 
-  const [rows] = await pool.query(sql, values);
+  const [rows] = await executor.query(sql, values);
   return rows;
 }
 

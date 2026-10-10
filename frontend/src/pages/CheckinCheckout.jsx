@@ -23,6 +23,12 @@ export default function CheckinCheckout() {
   const [equipamentos, setEquipamentos] = useState([]);
   const [utilizacoesAtivas, setUtilizacoesAtivas] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Equipamento e Utilização identificados via QR
+  const [identifiedEquip, setIdentifiedEquip] = useState(null);
+  const [identifiedUtilizacao, setIdentifiedUtilizacao] = useState(null);
+  const [manualFallbackOpen, setManualFallbackOpen] = useState(false);
 
   // Formulário Check-in
   const [checkinEquipId, setCheckinEquipId] = useState('');
@@ -50,14 +56,6 @@ export default function CheckinCheckout() {
       ]);
       setEquipamentos(resEquip.data);
       setUtilizacoesAtivas(resUtil.data);
-
-      if (resEquip.data.length > 0 && !checkinEquipId) {
-        const firstAvail = resEquip.data.find(e => (e.status || '').toLowerCase() === 'disponivel');
-        if (firstAvail) setCheckinEquipId(firstAvail.id || firstAvail.id_equipamento);
-      }
-      if (resUtil.data.length > 0 && !checkoutUtilizacaoId) {
-        setCheckoutUtilizacaoId(resUtil.data[0].id || resUtil.data[0].id_utilizacao);
-      }
     } catch (err) {
       console.error('[CheckinCheckout] Erro:', err);
     } finally {
@@ -69,45 +67,113 @@ export default function CheckinCheckout() {
     loadData();
   }, []);
 
-  const handleQRDetected = (scannedValue, parsedObj = null) => {
+  const handleQRDetected = async (scannedValue, parsedObj = null, rawString = null) => {
     setError('');
     setMessage(null);
 
-    // Localiza o equipamento pelo ID ou pelo código de patrimônio
-    const equip = equipamentos.find(
-      (e) =>
-        String(e.id || e.id_equipamento) === String(scannedValue) ||
-        (e.codigo_patrimonio && e.codigo_patrimonio.toUpperCase() === scannedValue.toUpperCase()) ||
-        (e.codigo && e.codigo.toUpperCase() === scannedValue.toUpperCase())
-    );
+    const termToIdentify = rawString || (typeof scannedValue === 'object' ? JSON.stringify(scannedValue) : String(scannedValue));
 
-    if (!equip) {
-      setError(`Equipamento correspondente a "${scannedValue}" não foi encontrado no banco de dados.`);
-      return;
-    }
-
-    const eqId = equip.id || equip.id_equipamento;
-
-    // Se o equipamento estiver 'em_uso', direciona automaticamente para a aba de Check-out!
-    const utilAtiva = utilizacoesAtivas.find(
-      (u) => String(u.equipamento_id || u.id_equipamento) === String(eqId)
-    );
-
-    if (utilAtiva) {
-      setActiveTab('checkout');
-      setCheckoutUtilizacaoId(utilAtiva.id || utilAtiva.id_utilizacao);
-      setMessage({
-        type: 'info',
-        text: `QR Code lido com sucesso! Equipamento "${equip.nome}" possui check-in ativo. Preencha a condição de devolução para realizar o check-out.`
+    try {
+      // Identificação e validação no backend
+      const res = await api.post('/equipamentos/identificar-qr', {
+        scanned_value: termToIdentify
       });
-    } else {
-      setActiveTab('checkin');
-      setCheckinEquipId(eqId);
-      setMessage({
-        type: 'info',
-        text: `QR Code lido com sucesso! Equipamento "${equip.nome}" selecionado para Check-in.`
-      });
+
+      const {
+        equipamento,
+        utilizacaoAtiva,
+        fluxoRecomendado,
+        motivoBloqueio
+      } = res.data;
+
+      setIdentifiedEquip(equipamento);
+      setIdentifiedUtilizacao(utilizacaoAtiva);
+
+      if (fluxoRecomendado === 'bloqueado') {
+        setError(motivoBloqueio || 'Equipamento bloqueado para uso no momento.');
+        setCheckinEquipId('');
+        setCheckoutUtilizacaoId('');
+        return;
+      }
+
+      if (fluxoRecomendado === 'checkout') {
+        setActiveTab('checkout');
+        setCheckoutUtilizacaoId(utilizacaoAtiva?.id || utilizacaoAtiva?.id_utilizacao || '');
+        setMessage({
+          type: 'info',
+          text: `QR Code lido com sucesso! Equipamento "${equipamento.nome}" possui check-in em andamento. Preencha a condição de devolução para realizar o check-out.`
+        });
+      } else {
+        setActiveTab('checkin');
+        setCheckinEquipId(equipamento.id || equipamento.id_equipamento);
+        setMessage({
+          type: 'info',
+          text: `QR Code lido com sucesso! Equipamento "${equipamento.nome}" está disponível. Confirme o check-in de retirada.`
+        });
+      }
+    } catch (err) {
+      // Fallback para busca local caso backend retorne erro de formato
+      const search = String(scannedValue).toUpperCase().trim();
+      const localMatch = equipamentos.find(
+        (e) =>
+          String(e.id || e.id_equipamento) === search ||
+          (e.codigo_labcontrol && e.codigo_labcontrol.toUpperCase() === search) ||
+          (e.codigo_patrimonio && e.codigo_patrimonio.toUpperCase() === search) ||
+          (e.patrimonio_ufpi && e.patrimonio_ufpi.toUpperCase() === search)
+      );
+
+      if (!localMatch) {
+        setError(err.response?.data?.error || `Nenhum equipamento cadastrado corresponde a "${scannedValue}".`);
+        setIdentifiedEquip(null);
+        setIdentifiedUtilizacao(null);
+        return;
+      }
+
+      const eqId = localMatch.id || localMatch.id_equipamento;
+      const status = (localMatch.status || '').toLowerCase();
+
+      setIdentifiedEquip(localMatch);
+
+      if (status === 'manutencao' || status === 'em_manutencao') {
+        setError('Equipamento em manutenção. Check-in bloqueado.');
+        return;
+      }
+      if (localMatch.inativo === 1 || localMatch.inativo === true || status === 'inativo') {
+        setError('Equipamento inativo. Não pode ser utilizado.');
+        return;
+      }
+
+      const utilAtiva = utilizacoesAtivas.find(
+        (u) => String(u.equipamento_id || u.id_equipamento) === String(eqId)
+      );
+
+      if (utilAtiva) {
+        setActiveTab('checkout');
+        setIdentifiedUtilizacao(utilAtiva);
+        setCheckoutUtilizacaoId(utilAtiva.id || utilAtiva.id_utilizacao);
+        setMessage({
+          type: 'info',
+          text: `QR Code lido! Equipamento "${localMatch.nome}" possui utilização ativa. Preencha o formulário de devolução.`
+        });
+      } else {
+        setActiveTab('checkin');
+        setIdentifiedUtilizacao(null);
+        setCheckinEquipId(eqId);
+        setMessage({
+          type: 'info',
+          text: `QR Code lido! Equipamento "${localMatch.nome}" selecionado para Check-in.`
+        });
+      }
     }
+  };
+
+  const handleClearIdentified = () => {
+    setIdentifiedEquip(null);
+    setIdentifiedUtilizacao(null);
+    setCheckinEquipId('');
+    setCheckoutUtilizacaoId('');
+    setMessage(null);
+    setError('');
   };
 
   const handleCheckinSubmit = async (e) => {
@@ -120,6 +186,7 @@ export default function CheckinCheckout() {
       return;
     }
 
+    setSubmitting(true);
     try {
       const res = await api.post('/utilizacoes/checkin', {
         equipamento_id: checkinEquipId,
@@ -135,6 +202,8 @@ export default function CheckinCheckout() {
       loadData();
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao realizar check-in');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -155,6 +224,7 @@ export default function CheckinCheckout() {
       return;
     }
 
+    setSubmitting(true);
     try {
       const res = await api.post('/utilizacoes/checkout', {
         utilizacao_id: checkoutUtilizacaoId,
@@ -185,6 +255,8 @@ export default function CheckinCheckout() {
       loadData();
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao realizar check-out');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -216,6 +288,58 @@ export default function CheckinCheckout() {
         <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-start gap-2">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {/* Equipamento Identificado via QR Code */}
+      {identifiedEquip && (
+        <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-md border border-slate-800 space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+            <div className="flex items-center gap-2">
+              <QrCode className="w-5 h-5 text-teal-400" />
+              <span className="text-xs font-bold uppercase tracking-wider text-teal-400">
+                Equipamento Identificado via QR Code
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleClearIdentified}
+              className="text-xs text-slate-300 hover:text-white underline font-medium"
+            >
+              Escanear Outro / Limpar
+            </button>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-bold text-white">{identifiedEquip.nome}</h3>
+              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300 mt-1">
+                <span>
+                  Código LabControl: <strong className="font-mono text-teal-300">{identifiedEquip.codigo_labcontrol || `LC-EQ-${identifiedEquip.id}`}</strong>
+                </span>
+                {identifiedEquip.patrimonio_ufpi && (
+                  <span>
+                    Patrimônio UFPI: <strong className="font-mono text-slate-200">{identifiedEquip.patrimonio_ufpi}</strong>
+                  </span>
+                )}
+                {identifiedEquip.espaco_nome && (
+                  <span>
+                    Laboratório: <strong className="text-slate-200">{identifiedEquip.espaco_nome}</strong>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <span className={`self-start sm:self-auto px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+              identifiedEquip.status === 'disponivel'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                : identifiedEquip.status === 'em_uso'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+            }`}>
+              {identifiedEquip.status === 'em_uso' ? 'Em Uso' : identifiedEquip.status === 'disponivel' ? 'Disponível' : identifiedEquip.status}
+            </span>
+          </div>
         </div>
       )}
 
@@ -256,24 +380,61 @@ export default function CheckinCheckout() {
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Equipamento para Retirada
               </label>
-              <select
-                value={checkinEquipId}
-                onChange={(e) => setCheckinEquipId(e.target.value)}
-                required
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-              >
-                <option value="">Selecione o equipamento...</option>
-                {equipamentos.map((eq) => {
-                  const id = eq.id || eq.id_equipamento;
-                  const status = (eq.status || '').toLowerCase();
-                  const isAvailable = status === 'disponivel';
-                  return (
-                    <option key={id} value={id} disabled={!isAvailable}>
-                      {eq.nome} ({eq.codigo_patrimonio || `ID ${id}`}) - [{status.toUpperCase()}] {eq.exige_capacitacao ? '🔒 Exige Capacitação' : ''}
-                    </option>
-                  );
-                })}
-              </select>
+
+              {identifiedEquip ? (
+                /* Fluxo QR primário: Equipamento fixado sem necessidade de dropdown */
+                <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-xs">{identifiedEquip.nome}</h4>
+                      <p className="text-[11px] text-teal-800">
+                        Identificado via QR: <span className="font-mono font-bold">{identifiedEquip.codigo_labcontrol || identifiedEquip.codigo_patrimonio}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setManualFallbackOpen(!manualFallbackOpen)}
+                    className="text-[11px] text-teal-700 hover:underline font-semibold"
+                  >
+                    {manualFallbackOpen ? 'Ocultar Lista' : 'Trocar Manualmente'}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 mb-2">
+                  Dica: utilize a câmera acima para escanear a etiqueta QR do equipamento e preencher automaticamente.
+                </p>
+              )}
+
+              {/* Dropdown manual secundário / fallback */}
+              {(!identifiedEquip || manualFallbackOpen) && (
+                <div className={identifiedEquip ? 'mt-2 pt-2 border-t border-slate-100' : ''}>
+                  <select
+                    value={checkinEquipId}
+                    onChange={(e) => {
+                      const selId = e.target.value;
+                      setCheckinEquipId(selId);
+                      const equipFound = equipamentos.find(eq => String(eq.id || eq.id_equipamento) === String(selId));
+                      if (equipFound) setIdentifiedEquip(equipFound);
+                    }}
+                    required
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  >
+                    <option value="">Selecione o equipamento da lista...</option>
+                    {equipamentos.map((eq) => {
+                      const id = eq.id || eq.id_equipamento;
+                      const status = (eq.status || '').toLowerCase();
+                      const isAvailable = status === 'disponivel';
+                      return (
+                        <option key={id} value={id} disabled={!isAvailable}>
+                          {eq.nome} ({eq.codigo_patrimonio || `ID ${id}`}) - [{status.toUpperCase()}] {eq.exige_capacitacao ? '🔒 Exige Capacitação' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div>
@@ -303,10 +464,11 @@ export default function CheckinCheckout() {
 
             <button
               type="submit"
-              className="w-full py-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-md transition flex items-center justify-center gap-2"
+              disabled={!checkinEquipId || submitting}
+              className="w-full py-3 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-bold shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
             >
               <LogIn className="w-4 h-4" />
-              Confirmar Check-in de Retirada
+              {submitting ? 'Processando Check-in...' : 'Confirmar Check-in de Retirada'}
             </button>
           </form>
         )}
@@ -318,27 +480,68 @@ export default function CheckinCheckout() {
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Utilização em Andamento
               </label>
-              {utilizacoesAtivas.length === 0 ? (
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-400 text-xs">
-                  Não há equipamentos com check-in em andamento no momento.
+
+              {identifiedEquip && identifiedUtilizacao ? (
+                /* Fluxo QR primário: Utilização fixada sem dependência de dropdown */
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-xs">{identifiedEquip.nome}</h4>
+                      <p className="text-[11px] text-purple-800">
+                        Check-in #{identifiedUtilizacao.id || identifiedUtilizacao.id_utilizacao} • Retirado em {new Date(identifiedUtilizacao.data_checkin).toLocaleTimeString('pt-BR')}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setManualFallbackOpen(!manualFallbackOpen)}
+                    className="text-[11px] text-purple-700 hover:underline font-semibold"
+                  >
+                    {manualFallbackOpen ? 'Ocultar Lista' : 'Trocar Utilização'}
+                  </button>
                 </div>
               ) : (
-                <select
-                  value={checkoutUtilizacaoId}
-                  onChange={(e) => setCheckoutUtilizacaoId(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
-                >
-                  <option value="">Selecione a utilização ativa...</option>
-                  {utilizacoesAtivas.map((u) => {
-                    const id = u.id || u.id_utilizacao;
-                    return (
-                      <option key={id} value={id}>
-                        #{id} - {u.equipamento_nome || `Equipamento ${u.equipamento_id}`} | Usuário: {u.usuario_nome || u.usuario_id}
-                      </option>
-                    );
-                  })}
-                </select>
+                <p className="text-xs text-slate-500 mb-2">
+                  Dica: escaneie a etiqueta QR do equipamento para selecionar a utilização ativa automaticamente.
+                </p>
+              )}
+
+              {/* Dropdown manual secundário / fallback */}
+              {(!identifiedEquip || !identifiedUtilizacao || manualFallbackOpen) && (
+                <div className={identifiedEquip ? 'mt-2 pt-2 border-t border-slate-100' : ''}>
+                  {utilizacoesAtivas.length === 0 ? (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-400 text-xs">
+                      Não há equipamentos com check-in em andamento no momento.
+                    </div>
+                  ) : (
+                    <select
+                      value={checkoutUtilizacaoId}
+                      onChange={(e) => {
+                        const selId = e.target.value;
+                        setCheckoutUtilizacaoId(selId);
+                        const selUtil = utilizacoesAtivas.find(u => String(u.id || u.id_utilizacao) === String(selId));
+                        if (selUtil) {
+                          setIdentifiedUtilizacao(selUtil);
+                          const eqFound = equipamentos.find(eq => String(eq.id || eq.id_equipamento) === String(selUtil.equipamento_id || selUtil.id_equipamento));
+                          if (eqFound) setIdentifiedEquip(eqFound);
+                        }
+                      }}
+                      required
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                    >
+                      <option value="">Selecione a utilização ativa da lista...</option>
+                      {utilizacoesAtivas.map((u) => {
+                        const id = u.id || u.id_utilizacao;
+                        return (
+                          <option key={id} value={id}>
+                            #{id} - {u.equipamento_nome || `Equipamento ${u.equipamento_id}`} | Usuário: {u.usuario_nome || u.usuario_id}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
+                </div>
               )}
             </div>
 
@@ -421,11 +624,11 @@ export default function CheckinCheckout() {
 
             <button
               type="submit"
-              disabled={utilizacoesAtivas.length === 0}
-              className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-bold shadow-md transition flex items-center justify-center gap-2"
+              disabled={utilizacoesAtivas.length === 0 || submitting}
+              className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-bold shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
-              Finalizar Check-out e Registrar Condição
+              {submitting ? 'Processando Check-out...' : 'Finalizar Check-out e Registrar Condição'}
             </button>
           </form>
         )}

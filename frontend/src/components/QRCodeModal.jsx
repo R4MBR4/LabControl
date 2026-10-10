@@ -8,14 +8,21 @@ export default function QRCodeModal({ isOpen, onClose, equipamento }) {
   if (!isOpen || !equipamento) return null;
 
   const equipId = equipamento.id || equipamento.id_equipamento;
-  const codigo = equipamento.codigo_patrimonio || equipamento.patrimonio || equipamento.codigo || `EQ-${equipId}`;
+  const codigoLab = equipamento.codigo_labcontrol || `LC-EQ-${String(equipId).padStart(4, '0')}`;
+  const patrimonioUfpi = equipamento.patrimonio_ufpi || null;
 
-  const qrPayload = JSON.stringify({
+  const payloadObj = {
     id: equipId,
-    codigo,
+    codigo_labcontrol: codigoLab,
     nome: equipamento.nome,
     action: 'LABCONTROL_CHECKIN_CHECKOUT'
-  });
+  };
+  if (patrimonioUfpi) {
+    payloadObj.patrimonio_ufpi = patrimonioUfpi;
+  }
+
+  const qrPayload = JSON.stringify(payloadObj);
+  const codigoExibicao = patrimonioUfpi || codigoLab;
 
   const handlePrint = () => {
     window.print();
@@ -52,7 +59,7 @@ export default function QRCodeModal({ isOpen, onClose, equipamento }) {
 
       context.font = '20px monospace';
       context.fillStyle = '#0d9488';
-      context.fillText(`PATRIMÔNIO: ${codigo}`, 300, 620);
+      context.fillText(`CÓDIGO: ${codigoExibicao}`, 300, 620);
 
       context.font = '16px sans-serif';
       context.fillStyle = '#64748b';
@@ -60,7 +67,7 @@ export default function QRCodeModal({ isOpen, onClose, equipamento }) {
 
       const pngFile = canvas.toDataURL('image/png');
       const downloadLink = document.createElement('a');
-      downloadLink.download = `etiqueta-qrcode-${codigo}.png`;
+      downloadLink.download = `etiqueta-qrcode-${codigoExibicao}.png`;
       downloadLink.href = pngFile;
       downloadLink.click();
     };
@@ -104,7 +111,7 @@ export default function QRCodeModal({ isOpen, onClose, equipamento }) {
 
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-teal-100/80 text-teal-800 text-xs font-mono font-bold rounded-md mb-2">
             <Tag className="w-3.5 h-3.5" />
-            {codigo}
+            {codigoExibicao}
           </span>
 
           <h4 className="font-semibold text-sm text-slate-800 max-w-xs">{equipamento.nome}</h4>

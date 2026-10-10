@@ -85,16 +85,17 @@ export default function EspacoDetalhes() {
           Voltar para Lista de Espaços
         </Link>
 
-        {/* Botão de Acesso ao Modo Monitor */}
+        {/* Botão de Acesso ao Painel de Ocupação (Kiosk de Porta) */}
         <div className="flex items-center gap-2">
           <Link
             to={`/espacos/${id}/monitor`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-md transition"
+            title="Abrir painel digital de ocupação em tempo real para exibição na porta/totem do laboratório"
           >
             <Tv className="w-4 h-4 text-teal-400" />
-            Abrir no Modo Monitor (Painel de Exibição)
+            Painel de Ocupação (Kiosk)
           </Link>
           <button
             onClick={() => setQrModalOpen(true)}

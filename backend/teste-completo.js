@@ -50,7 +50,8 @@ async function runCompleteDiagnostics() {
     if (userRows.length > 0) {
       const admin = userRows[0];
       const passValid = await bcrypt.compare('admin123', admin.senha);
-      const token = jwt.sign({ id: admin.id, perfil: admin.perfil }, process.env.JWT_SECRET || 'secret', { expiresIn: '1h' });
+      const jwtSecret = process.env.JWT_SECRET || 'test-only-diagnostic-secret-key-0123456789';
+      const token = jwt.sign({ id: admin.id, perfil: admin.perfil }, jwtSecret, { expiresIn: '1h' });
       report(3, 'Autenticação de Usuário e Validação Bcrypt', passValid && !!token, 'Login com admin@labcontrol.com validado');
     } else {
       report(3, 'Autenticação de Usuário e Validação Bcrypt', false, 'Usuário admin não encontrado');

@@ -257,10 +257,10 @@ export default function Espacos() {
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition shadow-xs"
-                      title="Abrir Modo Monitor Kiosk / Painel de Porta"
+                      title="Abrir Painel de Ocupação da Porta (Exibição Kiosk em Tempo Real)"
                     >
                       <Tv className="w-3.5 h-3.5 text-teal-400" />
-                      Monitor
+                      Painel Kiosk
                     </Link>
                   </div>
 

@@ -8,6 +8,11 @@ async function list(req, res) {
     const filters = {};
     if (req.query.equipamento_id) filters.equipamento_id = req.query.equipamento_id;
     if (req.query.status) filters.status = req.query.status;
+    if (req.query.espaco_id) filters.espaco_id = req.query.espaco_id;
+    if (req.query.tipo) filters.tipo = req.query.tipo;
+    if (req.query.recorrente !== undefined) filters.recorrente = req.query.recorrente;
+    if (req.query.data_inicio_de) filters.data_inicio_de = req.query.data_inicio_de;
+    if (req.query.data_fim_ate) filters.data_fim_ate = req.query.data_fim_ate;
 
     const manutencoes = await manutencaoModel.getAllManutencoes(filters);
     res.json(manutencoes);
@@ -86,7 +91,10 @@ async function create(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Manutencao] Erro ao cadastrar:', err);
-    res.status(500).json({ error: 'Erro ao iniciar manutenção: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao iniciar manutenção',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -158,7 +166,10 @@ async function concluir(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Manutencao] Erro ao concluir:', err);
-    res.status(500).json({ error: 'Erro ao concluir manutenção: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao concluir manutenção',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }

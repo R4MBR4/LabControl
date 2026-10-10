@@ -38,6 +38,21 @@ async function getAllUtilizacoes(filters = {}) {
     whereClauses.push(`u.status = ?`);
     values.push(filters.status);
   }
+  if (filters.espaco_id) {
+    whereClauses.push(`e.espaco_id = ?`);
+    values.push(filters.espaco_id);
+  }
+  if (filters.data_inicio_de) {
+    whereClauses.push(`u.data_inicio >= ?`);
+    values.push(filters.data_inicio_de);
+  }
+  if (filters.data_fim_ate) {
+    const dataAte = /^\d{4}-\d{2}-\d{2}$/.test(String(filters.data_fim_ate))
+      ? `${filters.data_fim_ate} 23:59:59`
+      : filters.data_fim_ate;
+    whereClauses.push(`u.data_inicio <= ?`);
+    values.push(dataAte);
+  }
 
   if (whereClauses.length > 0) {
     sql += ` WHERE ${whereClauses.join(' AND ')}`;

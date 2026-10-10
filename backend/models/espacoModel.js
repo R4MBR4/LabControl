@@ -9,8 +9,8 @@ async function getAllEspacos() {
   return rows;
 }
 
-async function getEspacoById(id) {
-  return findById(TABLE, id);
+async function getEspacoById(id, executor = pool) {
+  return findById(TABLE, id, executor);
 }
 
 async function createEspaco(data) {
@@ -184,6 +184,144 @@ async function getEspacoMonitor(id) {
   };
 }
 
+function parseDateTimeComponents(val) {
+  if (val instanceof Date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return {
+      year: val.getFullYear(),
+      month: val.getMonth() + 1,
+      day: val.getDate(),
+      dayOfWeek: val.getDay(),
+      timeStr: `${pad(val.getHours())}:${pad(val.getMinutes())}:${pad(val.getSeconds())}`
+    };
+  }
+  const str = String(val || '').trim();
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (match) {
+    const y = Number(match[1]);
+    const m = Number(match[2]);
+    const d = Number(match[3]);
+    const hh = Number(match[4]);
+    const mm = Number(match[5]);
+    const ss = Number(match[6] || 0);
+    const dt = new Date(y, m - 1, d, hh, mm, ss);
+    const pad = (n) => String(n).padStart(2, '0');
+    return {
+      year: y,
+      month: m,
+      day: d,
+      dayOfWeek: dt.getDay(),
+      timeStr: `${pad(hh)}:${pad(mm)}:${pad(ss)}`
+    };
+  }
+  const dt = new Date(val);
+  if (!isNaN(dt.getTime())) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return {
+      year: dt.getFullYear(),
+      month: dt.getMonth() + 1,
+      day: dt.getDate(),
+      dayOfWeek: dt.getDay(),
+      timeStr: `${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`
+    };
+  }
+  return null;
+}
+
+function normalizeTime(val, fallback = '07:00:00') {
+  if (!val) return fallback;
+  const str = String(val).trim();
+  const match = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!match) return fallback;
+  const h = String(match[1]).padStart(2, '0');
+  const m = String(match[2]).padStart(2, '0');
+  const s = String(match[3] || '00').padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+function parseOperatingDays(dias) {
+  if (!dias) return [1, 2, 3, 4, 5, 6];
+  if (Array.isArray(dias)) return dias.map(Number).filter((n) => !isNaN(n));
+  const dayMap = { dom: 0, seg: 1, ter: 2, qua: 3, qui: 4, sex: 5, sab: 6 };
+  const tokens = String(dias).toLowerCase().split(/[,;|\s]+/);
+  const result = [];
+  for (const token of tokens) {
+    if (dayMap[token] !== undefined) {
+      result.push(dayMap[token]);
+    } else {
+      const num = Number(token);
+      if (!isNaN(num) && num >= 0 && num <= 6) {
+        result.push(num);
+      }
+    }
+  }
+  return result.length > 0 ? result : [1, 2, 3, 4, 5, 6];
+}
+
+/**
+ * Validação formal de horário de funcionamento e status de espaço
+ */
+function validarHorarioFuncionamento(espaco, dataInicio, dataFim) {
+  if (!espaco) {
+    return { valido: true };
+  }
+
+  const status = (espaco.status || 'disponivel').toLowerCase();
+  if (['manutencao', 'em_manutencao', 'inativo', 'indisponivel', 'fechado'].includes(status)) {
+    return {
+      valido: false,
+      erro: `O espaço "${espaco.nome || 'selecionado'}" não está disponível para reservas (status: ${espaco.status}).`
+    };
+  }
+
+  const cInicio = parseDateTimeComponents(dataInicio);
+  const cFim = parseDateTimeComponents(dataFim);
+
+  if (!cInicio || !cFim) {
+    return { valido: false, erro: 'Data ou hora de início/término em formato inválido.' };
+  }
+
+  if (cInicio.year !== cFim.year || cInicio.month !== cFim.month || cInicio.day !== cFim.day) {
+    return { valido: false, erro: 'A reserva deve iniciar e terminar no mesmo dia.' };
+  }
+
+  const diasPermitidos = parseOperatingDays(espaco.dias_funcionamento);
+  if (!diasPermitidos.includes(cInicio.dayOfWeek)) {
+    const nomesDias = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+    const diaNome = nomesDias[cInicio.dayOfWeek] || 'este dia';
+    return {
+      valido: false,
+      erro: `O espaço "${espaco.nome}" não possui expediente em ${diaNome}.`
+    };
+  }
+
+  const abertura = normalizeTime(espaco.horario_abertura, '07:00:00');
+  const fechamento = normalizeTime(espaco.horario_fechamento, '22:00:00');
+
+  if (cInicio.timeStr < abertura) {
+    return {
+      valido: false,
+      erro: `Horário de início (${cInicio.timeStr.substring(0, 5)}) é anterior à abertura do espaço (${abertura.substring(0, 5)}).`
+    };
+  }
+
+  if (cFim.timeStr > fechamento) {
+    return {
+      valido: false,
+      erro: `Horário de término (${cFim.timeStr.substring(0, 5)}) ultrapassa o fechamento do espaço (${fechamento.substring(0, 5)}).`
+    };
+  }
+
+  if (cInicio.timeStr >= cFim.timeStr) {
+    return {
+      valido: false,
+      erro: 'O horário de início deve ser anterior ao horário de término.'
+    };
+  }
+
+  return { valido: true };
+}
+
 module.exports = {
   TABLE,
   getAllEspacos,
@@ -192,5 +330,8 @@ module.exports = {
   updateEspaco,
   deleteEspaco,
   getEspacoDetalhes,
-  getEspacoMonitor
+  getEspacoMonitor,
+  parseDateTimeComponents,
+  validarHorarioFuncionamento
 };
+

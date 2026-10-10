@@ -10,6 +10,8 @@ router.get('/', authorizeAdmin, usuarioController.list);
 router.get('/:id', authorizeAdmin, usuarioController.getById);
 router.post('/', authorizeAdmin, usuarioController.create);
 router.put('/:id', authorizeAdmin, usuarioController.update);
+router.post('/:id/inativar', authorizeAdmin, usuarioController.inativar);
+router.post('/:id/reativar', authorizeAdmin, usuarioController.reativar);
 router.delete('/:id', authorizeAdmin, usuarioController.remove);
 
 module.exports = router;

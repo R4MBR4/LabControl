@@ -123,7 +123,10 @@ async function create(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Equipamento] Erro ao cadastrar:', err);
-    res.status(500).json({ error: 'Erro ao cadastrar equipamento: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao cadastrar equipamento',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -186,7 +189,10 @@ async function update(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Equipamento] Erro ao atualizar:', err);
-    res.status(500).json({ error: 'Erro ao atualizar equipamento: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao atualizar equipamento',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -235,7 +241,10 @@ async function inativar(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Equipamento] Erro ao inativar:', err);
-    res.status(500).json({ error: 'Erro ao inativar equipamento: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao inativar equipamento',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -274,7 +283,10 @@ async function reativar(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Equipamento] Erro ao reativar:', err);
-    res.status(500).json({ error: 'Erro ao reativar equipamento: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao reativar equipamento',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -315,7 +327,10 @@ async function remove(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Equipamento] Erro ao remover:', err);
-    res.status(500).json({ error: 'Erro ao remover equipamento: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao remover equipamento',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -341,12 +356,16 @@ async function getHistorico(req, res) {
     });
   } catch (err) {
     console.error('[Equipamento] Erro ao obter histórico:', err.message);
-    res.status(500).json({ error: 'Erro ao obter histórico do equipamento: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao obter histórico do equipamento',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 }
 
 /**
- * Geração de QR Code com dados estáveis do equipamento
+ * Geração de QR Code com dados estáveis do equipamento.
+ * Não cria dados fictícios de patrimônio.
  */
 async function getQRCode(req, res) {
   try {
@@ -356,15 +375,18 @@ async function getQRCode(req, res) {
     }
 
     const codigoLab = equip.codigo_labcontrol || `LC-EQ-${String(equip.id).padStart(4, '0')}`;
-    const codigoPat = equip.patrimonio_ufpi || equip.codigo_patrimonio || equip.codigo || `EQ-${equip.id}`;
+    const patrimonioUfpi = equip.patrimonio_ufpi || equip.codigo_patrimonio || null;
 
-    const payload = JSON.stringify({
+    const payloadObj = {
       id: equip.id,
       codigo_labcontrol: codigoLab,
-      patrimonio_ufpi: codigoPat,
       nome: equip.nome,
       action: 'LABCONTROL_CHECKIN_CHECKOUT'
-    });
+    };
+    if (patrimonioUfpi) {
+      payloadObj.patrimonio_ufpi = patrimonioUfpi;
+    }
+    const payload = JSON.stringify(payloadObj);
 
     const qrDataUrl = await QRCode.toDataURL(payload, {
       errorCorrectionLevel: 'H',
@@ -379,15 +401,113 @@ async function getQRCode(req, res) {
     res.json({
       equipamento_id: equip.id,
       nome: equip.nome,
-      codigo: codigoPat,
+      codigo: patrimonioUfpi || codigoLab,
       codigo_labcontrol: codigoLab,
-      patrimonio_ufpi: codigoPat,
+      patrimonio_ufpi: patrimonioUfpi,
       qr_payload: payload,
       qr_code_image: qrDataUrl
     });
   } catch (err) {
     console.error('[Equipamento] Erro ao gerar QR Code:', err);
     res.status(500).json({ error: 'Erro ao gerar QR Code do equipamento' });
+  }
+}
+
+/**
+ * Identificação inequívoca de equipamento por leitura de QR Code ou código digitado.
+ * Retorna estado operacional, verificação de uso ativo e direcionamento correto de fluxo.
+ */
+async function identificarQR(req, res) {
+  try {
+    const scannedValue = req.body?.scanned_value || req.query?.scanned_value || req.body?.codigo || req.query?.codigo;
+    if (!scannedValue) {
+      return res.status(400).json({ error: 'Identificador ou leitura de QR Code é obrigatório.' });
+    }
+
+    const equip = await equipamentoModel.localizarPorIdentificadorQR(scannedValue);
+    if (!equip) {
+      return res.status(404).json({ error: 'Nenhum equipamento cadastrado corresponde a esta leitura.' });
+    }
+
+    const equipId = equip.id || equip.id_equipamento;
+    const status = (equip.status || 'disponivel').toLowerCase();
+    const isInactive = equip.inativo === 1 || equip.inativo === true || status === 'inativo';
+    const isManutencao = status === 'manutencao' || status === 'em_manutencao';
+
+    // Verifica utilização ativa no banco de dados
+    const utilizacaoModel = require('../models/utilizacaoModel');
+    const utilizacaoAtiva = await utilizacaoModel.getActiveUtilizacaoByEquipamento(equipId);
+
+    // Validação de capacitação técnica obrigatória
+    const capacitacaoModel = require('../models/capacitacaoModel');
+    const exigeCapacitacao = equip.exige_capacitacao === 1 || equip.exige_capacitacao === true;
+    let usuarioCapacitado = true;
+    if (exigeCapacitacao && req.user?.id) {
+      usuarioCapacitado = await capacitacaoModel.checkUserCapacitacao(req.user.id, equipId);
+    }
+
+    const role = (req.user?.perfil || '').toLowerCase();
+    const isAdmin = role === 'admin' || role === 'administrador';
+
+    let fluxoRecomendado = 'checkin';
+    let motivoBloqueio = null;
+
+    if (isInactive) {
+      fluxoRecomendado = 'bloqueado';
+      motivoBloqueio = 'Equipamento inativo. Não pode ser utilizado.';
+    } else if (isManutencao) {
+      fluxoRecomendado = 'bloqueado';
+      motivoBloqueio = 'Equipamento em manutenção. Check-in bloqueado.';
+    } else if (utilizacaoAtiva) {
+      fluxoRecomendado = 'checkout';
+    } else if (exigeCapacitacao && !usuarioCapacitado) {
+      fluxoRecomendado = 'bloqueado';
+      motivoBloqueio = 'Equipamento exige capacitação técnica prévia. Usuário não autorizado.';
+    } else {
+      fluxoRecomendado = 'checkin';
+    }
+
+    const podeCheckout = Boolean(
+      utilizacaoAtiva &&
+      (isAdmin || String(utilizacaoAtiva.usuario_id || utilizacaoAtiva.id_usuario) === String(req.user?.id))
+    );
+
+    res.json({
+      equipamento: equip,
+      utilizacaoAtiva: utilizacaoAtiva || null,
+      fluxoRecomendado,
+      motivoBloqueio,
+      podeCheckout,
+      podeCheckin: fluxoRecomendado === 'checkin',
+      exigeCapacitacao,
+      usuarioCapacitado
+    });
+  } catch (err) {
+    console.error('[Equipamento] Erro ao identificar QR:', err);
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+}
+
+/**
+ * Geração de etiquetas em lote para múltiplos equipamentos selecionados.
+ * Retorna saída adequada para impressão contendo QR, nome, código LabControl e patrimônio UFPI (quando disponível).
+ * Não cria dados fictícios.
+ */
+async function gerarEtiquetasLote(req, res) {
+  try {
+    const ids = req.body?.ids || (req.query?.ids ? String(req.query.ids).split(',') : []);
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Nenhum equipamento selecionado para geração de etiquetas.' });
+    }
+
+    const etiquetas = await equipamentoModel.gerarEtiquetasEmLote(ids);
+    res.json({
+      total: etiquetas.length,
+      etiquetas
+    });
+  } catch (err) {
+    console.error('[Equipamento] Erro ao gerar etiquetas em lote:', err);
+    res.status(500).json({ error: 'Erro ao gerar etiquetas em lote' });
   }
 }
 
@@ -401,5 +521,7 @@ module.exports = {
   remove,
   getHistorico,
   getQRCode,
+  identificarQR,
+  gerarEtiquetasLote,
   validateTechnicalFields
 };

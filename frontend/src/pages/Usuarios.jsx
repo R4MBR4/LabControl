@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
+import LoadError from '../components/LoadError';
 import {
   Users,
   Plus,
@@ -12,12 +13,15 @@ import {
   Trash2,
   X,
   Lock,
-  Mail
+  Mail,
+  GraduationCap
 } from 'lucide-react';
 
 export default function Usuarios() {
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -26,7 +30,7 @@ export default function Usuarios() {
     nome: '',
     email: '',
     senha: '',
-    perfil: 'usuario',
+    perfil: 'aluno',
     matricula: '',
     telefone: ''
   });
@@ -37,10 +41,12 @@ export default function Usuarios() {
   const loadUsuarios = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const res = await api.get('/usuarios');
       setUsuarios(res.data);
     } catch (err) {
       console.error('[Usuarios] Erro:', err);
+      setLoadError(err.response?.data?.error || 'Não foi possível carregar a lista de usuários.');
     } finally {
       setLoading(false);
     }
@@ -79,6 +85,7 @@ export default function Usuarios() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setSaving(true);
     try {
       if (editingUser) {
         const id = editingUser.id || editingUser.id_usuario;
@@ -93,6 +100,8 @@ export default function Usuarios() {
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao salvar usuário');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -153,7 +162,9 @@ export default function Usuarios() {
       </div>
 
       {/* Tabela de Usuários */}
-      {loading ? (
+      {loadError ? (
+        <LoadError message={loadError} onRetry={loadUsuarios} />
+      ) : loading ? (
         <div className="py-12 flex justify-center">
           <div className="w-8 h-8 border-3 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
@@ -305,8 +316,11 @@ export default function Usuarios() {
                     onChange={(e) => setFormData({ ...formData, perfil: e.target.value })}
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                   >
+                    <option value="aluno">Aluno / Pesquisador</option>
+                    <option value="professor">Docente / Pesquisador</option>
+                    <option value="tecnico">Técnico de Laboratório</option>
+                    <option value="admin">Administrador do Sistema</option>
                     <option value="usuario">Usuário Comum</option>
-                    <option value="administrador">Administrador</option>
                   </select>
                 </div>
                 <div>
@@ -331,9 +345,10 @@ export default function Usuarios() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-sm"
+                  disabled={saving}
+                  className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-sm disabled:opacity-50"
                 >
-                  {editingUser ? 'Salvar Alterações' : 'Cadastrar Usuário'}
+                  {saving ? 'Salvando...' : editingUser ? 'Salvar Alterações' : 'Cadastrar Usuário'}
                 </button>
               </div>
             </form>

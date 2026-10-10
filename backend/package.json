@@ -21,7 +21,14 @@
     "test:acesso-capacitacoes": "node teste-acesso-capacitacoes.js",
     "test:integracao-acesso-capacitacoes": "node teste-integracao-acesso-capacitacoes.js",
     "test:acesso-registros-usuario": "node teste-acesso-registros-usuario.js",
-    "test:visualizador-tabelas-auth": "node teste-visualizador-tabelas-auth.js"
+    "test": "node teste-suite-integrada.js",
+    "test:completo": "node teste-suite-integrada.js",
+    "test:fase-a": "node teste-fase-a-seguranca.js",
+    "test:fase-b": "node teste-fase-b-regras-uso.js",
+    "test:fase-c": "node teste-fase-c-fluxos-qr.js",
+    "test:fase-d": "node teste-fase-d-ux-dashboard.js",
+    "test:fase-e": "node teste-fase-e-contas-usuarios.js",
+    "test:fase-f": "node teste-fase-f-relatorios.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

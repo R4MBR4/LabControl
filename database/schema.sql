@@ -13,13 +13,19 @@ USE `labcontrol`;
 -- Desativa temporariamente checagens para recriação limpa
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS `notificacao`;
+DROP TABLE IF EXISTS `auditoria_evento`;
+DROP TABLE IF EXISTS `consumivel_movimentacao`;
 DROP TABLE IF EXISTS `configuracao_sistema`;
+DROP TABLE IF EXISTS `inventario_item`;
+DROP TABLE IF EXISTS `inventario`;
 DROP TABLE IF EXISTS `capacitacao`;
 DROP TABLE IF EXISTS `consumivel`;
 DROP TABLE IF EXISTS `manutencao`;
 DROP TABLE IF EXISTS `ocorrencia`;
 DROP TABLE IF EXISTS `utilizacao`;
 DROP TABLE IF EXISTS `reserva`;
+DROP TABLE IF EXISTS `equipamento_documento`;
 DROP TABLE IF EXISTS `equipamento`;
 DROP TABLE IF EXISTS `espaco`;
 DROP TABLE IF EXISTS `usuario`;
@@ -54,6 +60,9 @@ CREATE TABLE `espaco` (
   `localizacao` VARCHAR(150) NULL,
   `responsavel` VARCHAR(100) NULL,
   `status` VARCHAR(30) NOT NULL DEFAULT 'disponivel',
+  `horario_abertura` TIME NOT NULL DEFAULT '07:00:00',
+  `horario_fechamento` TIME NOT NULL DEFAULT '22:00:00',
+  `dias_funcionamento` VARCHAR(50) NOT NULL DEFAULT '1,2,3,4,5,6',
   `descricao` TEXT NULL,
   `foto_url` LONGTEXT NULL,
   `regras_utilizacao` TEXT NULL,
@@ -135,6 +144,12 @@ CREATE TABLE `reserva` (
   `finalidade` VARCHAR(255) NULL,
   `observacoes` TEXT NULL,
   `status` VARCHAR(30) NOT NULL DEFAULT 'confirmada',
+  `tipo` VARCHAR(30) NOT NULL DEFAULT 'comum',
+  `disciplina` VARCHAR(100) NULL,
+  `turma` VARCHAR(50) NULL,
+  `data_fim_original` DATETIME NULL,
+  `prorrogada_ate` DATETIME NULL,
+  `justificativa_prorrogacao` VARCHAR(255) NULL,
   `grupo_recorrencia_id` VARCHAR(64) NULL,
   `recorrente` TINYINT(1) NOT NULL DEFAULT 0,
   `regra_recorrencia` VARCHAR(100) NULL,
@@ -144,11 +159,12 @@ CREATE TABLE `reserva` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_reserva_datas` (`data_inicio`, `data_fim`),
   INDEX `idx_reserva_status` (`status`),
+  INDEX `idx_reserva_tipo` (`tipo`),
   INDEX `idx_reserva_grupo_rec` (`grupo_recorrencia_id`),
   INDEX `idx_reserva_no_show` (`no_show`),
   CONSTRAINT `fk_reserva_usuario`
     FOREIGN KEY (`usuario_id`) REFERENCES `usuario` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE,
+    ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_reserva_espaco`
     FOREIGN KEY (`espaco_id`) REFERENCES `espaco` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -182,7 +198,7 @@ CREATE TABLE `utilizacao` (
     ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_utilizacao_usuario`
     FOREIGN KEY (`usuario_id`) REFERENCES `usuario` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE,
+    ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_utilizacao_equipamento`
     FOREIGN KEY (`equipamento_id`) REFERENCES `equipamento` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE
@@ -219,7 +235,7 @@ CREATE TABLE `ocorrencia` (
     ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_ocorrencia_usuario`
     FOREIGN KEY (`usuario_id`) REFERENCES `usuario` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE
+    ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -266,6 +282,30 @@ CREATE TABLE `consumivel` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
+-- 8.1 Tabela: consumivel_movimentacao (Histórico transacional de movimentações)
+-- --------------------------------------------------------
+CREATE TABLE `consumivel_movimentacao` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `consumivel_id` INT NULL,
+  `consumivel_nome` VARCHAR(100) NOT NULL,
+  `tipo` VARCHAR(20) NOT NULL,
+  `quantidade_anterior` DECIMAL(10,2) NOT NULL,
+  `quantidade_movimentada` DECIMAL(10,2) NOT NULL,
+  `quantidade_resultante` DECIMAL(10,2) NOT NULL,
+  `usuario_id` INT NULL,
+  `observacao` VARCHAR(500) NULL,
+  `criado_em` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_consumivel_movimentacao_item_data` (`consumivel_id`, `criado_em`),
+  INDEX `idx_consumivel_movimentacao_usuario_data` (`usuario_id`, `criado_em`),
+  CONSTRAINT `fk_consumivel_movimentacao_item`
+    FOREIGN KEY (`consumivel_id`) REFERENCES `consumivel` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_consumivel_movimentacao_usuario`
+    FOREIGN KEY (`usuario_id`) REFERENCES `usuario` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
 -- 9. Tabela: capacitacao (Habilitação para equipamentos críticos)
 -- --------------------------------------------------------
 CREATE TABLE `capacitacao` (
@@ -279,7 +319,7 @@ CREATE TABLE `capacitacao` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT `fk_capacitacao_usuario`
     FOREIGN KEY (`usuario_id`) REFERENCES `usuario` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE,
+    ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_capacitacao_equipamento`
     FOREIGN KEY (`equipamento_id`) REFERENCES `equipamento` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE

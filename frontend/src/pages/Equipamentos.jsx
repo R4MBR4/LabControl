@@ -187,7 +187,7 @@ export default function Equipamentos() {
       setFormData({
         nome: '',
         categoria: '',
-        patrimonio_ufpi: `UFPI-PAT-${randSeq}`,
+        patrimonio_ufpi: '', // Patrimônio oficial UFPI deve ser preenchido somente quando existente
         codigo_labcontrol: `LC-EQ-${randSeq}`,
         marca: '',
         modelo: '',

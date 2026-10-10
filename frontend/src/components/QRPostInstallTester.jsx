@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import QRScanner from './QRScanner';
+import api from '../services/api';
 import { X, CheckCircle2, AlertTriangle, Cpu, Tag, Barcode, ArrowRight, ShieldCheck, PowerOff, Wrench } from 'lucide-react';
 
 export default function QRPostInstallTester({ isOpen, onClose, equipamentos = [] }) {
@@ -11,9 +12,22 @@ export default function QRPostInstallTester({ isOpen, onClose, equipamentos = []
 
   if (!isOpen) return null;
 
-  const handleScan = (scannedCode, parsedPayload = null) => {
+  const handleScan = async (scannedCode, parsedPayload = null, rawString = null) => {
     setErrorMsg('');
     setScannedResult({ scannedCode, parsedPayload });
+
+    try {
+      const termToIdentify = rawString || (typeof scannedCode === 'object' ? JSON.stringify(scannedCode) : String(scannedCode));
+      const res = await api.post('/equipamentos/identificar-qr', {
+        scanned_value: termToIdentify
+      });
+      if (res.data?.equipamento) {
+        setMatchedEquip(res.data.equipamento);
+        return;
+      }
+    } catch {
+      // Fallback para verificação local caso offline
+    }
 
     // Encontra o equipamento correspondente no inventário
     const equip = equipamentos.find((e) => {

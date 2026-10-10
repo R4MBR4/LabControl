@@ -15,11 +15,14 @@ async function getAllOcorrencias(filters = {}) {
            u.nome AS usuario_nome, u.email AS usuario_email,
            e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo,
            e.codigo_labcontrol AS equipamento_labcontrol, e.patrimonio_ufpi AS equipamento_patrimonio_ufpi,
-           esp.nome AS espaco_nome
+           COALESCE(o.espaco_id, e.espaco_id) AS espaco_id,
+           esp.nome AS espaco_nome,
+           (SELECT m.id FROM manutencao m WHERE m.equipamento_id = o.equipamento_id AND LOWER(COALESCE(m.status, '')) NOT IN ('concluida', 'concluído', 'concluido', 'cancelada', 'cancelado') LIMIT 1) AS manutencao_id,
+           (SELECT m.status FROM manutencao m WHERE m.equipamento_id = o.equipamento_id AND LOWER(COALESCE(m.status, '')) NOT IN ('concluida', 'concluído', 'concluido', 'cancelada', 'cancelado') LIMIT 1) AS manutencao_status
     FROM \`${TABLE}\` o
     LEFT JOIN \`usuario\` u ON o.\`${fkUser}\` = u.\`${userPk}\`
     LEFT JOIN \`equipamento\` e ON o.\`${fkEquip}\` = e.\`${equipPk}\`
-    LEFT JOIN \`espaco\` esp ON o.espaco_id = esp.id
+    LEFT JOIN \`espaco\` esp ON COALESCE(o.espaco_id, e.espaco_id) = esp.id
   `;
 
   const whereClauses = [];
@@ -36,6 +39,25 @@ async function getAllOcorrencias(filters = {}) {
   if (filters.status) {
     whereClauses.push(`o.status = ?`);
     values.push(filters.status);
+  }
+  if (filters.espaco_id) {
+    whereClauses.push(`COALESCE(o.espaco_id, e.espaco_id) = ?`);
+    values.push(filters.espaco_id);
+  }
+  if (filters.gravidade) {
+    whereClauses.push(`LOWER(COALESCE(o.gravidade, '')) = LOWER(?)`);
+    values.push(filters.gravidade);
+  }
+  if (filters.data_inicio_de) {
+    whereClauses.push(`o.data_registro >= ?`);
+    values.push(filters.data_inicio_de);
+  }
+  if (filters.data_fim_ate) {
+    const dataAte = /^\d{4}-\d{2}-\d{2}$/.test(String(filters.data_fim_ate))
+      ? `${filters.data_fim_ate} 23:59:59`
+      : filters.data_fim_ate;
+    whereClauses.push(`o.data_registro <= ?`);
+    values.push(dataAte);
   }
 
   if (whereClauses.length > 0) {

@@ -197,13 +197,13 @@ export default function InventarioQR() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Inventário Físico por QR Code</h1>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Conferência Patrimonial / Inventário Físico</h1>
             <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-200">
               Conferência Ativa
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Conferência sequencial por laboratório, confronto de localização e tomada de decisão administrativa
+          <p className="text-xs text-slate-600 mt-0.5 font-medium">
+            Esta função não cadastra equipamentos. Ela realiza exclusivamente a conferência física e patrimonial de itens já registrados no sistema.
           </p>
         </div>
 
@@ -222,10 +222,22 @@ export default function InventarioQR() {
               className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-sm transition"
             >
               <Plus className="w-4 h-4" />
-              Nova Sessão de Inventário
+              Nova Sessão de Conferência
             </button>
           </div>
         )}
+      </div>
+
+      {/* Banner de Esclarecimento sobre Inventário Físico vs Cadastro */}
+      <div className="p-4 bg-teal-50/70 border border-teal-200 rounded-2xl flex items-start gap-3">
+        <ShieldCheck className="w-5 h-5 text-teal-700 shrink-0 mt-0.5" />
+        <div className="text-xs text-teal-900 space-y-0.5">
+          <span className="font-bold">Diretriz Institucional de Conferência Patrimonial:</span>
+          <p className="text-teal-800">
+            Esta ferramenta tem a finalidade exclusiva de verificar se o equipamento já registrado está fisicamente onde deveria estar. 
+            <strong> O inventário NÃO cadastra novos equipamentos nem altera dados de localização automaticamente.</strong> Caso o item seja encontrado em laboratório divergente, a decisão administrativa (transferir ou manter) deve ser deliberada pelo administrador.
+          </p>
+        </div>
       </div>
 
       {success && (
@@ -740,16 +752,23 @@ export default function InventarioQR() {
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="font-bold text-slate-800 text-base">Iniciar Sessão de Inventário</h3>
+              <h3 className="font-bold text-slate-800 text-base">Iniciar Sessão de Conferência Física</h3>
               <button onClick={() => setModalNewOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 leading-relaxed flex items-start gap-2">
+              <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <span>
+                <strong>Atenção:</strong> Esta função não cadastra equipamentos. Ela realiza exclusivamente a conferência física e patrimonial de itens já registrados no laboratório.
+              </span>
+            </div>
+
             <form onSubmit={handleStartNew} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Selecione o Laboratório / Espaço a Inventariar:
+                  Selecione o Laboratório / Espaço a Conferir:
                 </label>
                 <select
                   value={selectedEspacoId}

@@ -9,5 +9,7 @@ router.get('/', utilizacaoController.list);
 router.get('/:id', utilizacaoController.getById);
 router.post('/checkin', utilizacaoController.checkin);
 router.post('/checkout', utilizacaoController.checkout);
+router.post('/:id/estender', utilizacaoController.estender);
 
 module.exports = router;
+

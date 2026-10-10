@@ -46,7 +46,9 @@ async function getAllReservas(filters = {}) {
            u.nome AS usuario_nome, u.email AS usuario_email,
            e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo, e.codigo_labcontrol AS equipamento_codigo_labcontrol,
            s.nome AS espaco_nome,
-           es.nome AS equipamento_espaco_nome
+           es.nome AS equipamento_espaco_nome,
+           (SELECT u_sub.id FROM utilizacao u_sub WHERE u_sub.reserva_id = r.id LIMIT 1) AS utilizacao_id,
+           (SELECT u_sub.status FROM utilizacao u_sub WHERE u_sub.reserva_id = r.id LIMIT 1) AS utilizacao_status
     FROM \`${TABLE}\` r
     LEFT JOIN \`usuario\` u ON r.\`${fkUser}\` = u.\`${userPk}\`
     LEFT JOIN \`equipamento\` e ON r.\`${fkEquip}\` = e.\`${equipPk}\`
@@ -193,14 +195,16 @@ async function checkConflict({
   conditions.push(`(r.status IS NULL OR LOWER(r.status) NOT IN ('cancelada', 'cancelado', 'recusada', 'rejeitada'))`);
 
   if (equipamento_id && espaco_id) {
-    conditions.push(`(r.\`${fkEquip}\` = ? OR r.\`${fkEspaco}\` = ?)`);
+    // Equipamento específico: conflita apenas com o mesmo equipamento OU reserva exclusiva de toda a sala
+    conditions.push(`(r.\`${fkEquip}\` = ? OR (r.\`${fkEspaco}\` = ? AND r.\`${fkEquip}\` IS NULL))`);
     params.push(equipamento_id, espaco_id);
   } else if (equipamento_id) {
     conditions.push(`r.\`${fkEquip}\` = ?`);
     params.push(equipamento_id);
   } else if (espaco_id) {
-    conditions.push(`r.\`${fkEspaco}\` = ?`);
-    params.push(espaco_id);
+    // Espaço inteiro exclusivo: conflita com reserva do espaço OU qualquer equipamento alocado nele
+    conditions.push(`(r.\`${fkEspaco}\` = ? OR r.\`${fkEquip}\` IN (SELECT id FROM \`equipamento\` WHERE \`espaco_id\` = ?))`);
+    params.push(espaco_id, espaco_id);
   } else {
     return [];
   }
@@ -484,6 +488,9 @@ async function createSerieRecorrente({
   finalidade,
   observacoes,
   regra_recorrencia,
+  tipo = 'comum',
+  disciplina = null,
+  turma = null,
   tolerancia_no_show_min = 15,
   executor = pool
 }) {
@@ -491,14 +498,43 @@ async function createSerieRecorrente({
     throw new Error('Nenhuma ocorrência fornecida para a série recorrente.');
   }
 
-  // 1. Verificação rigorosa de conflito em TODAS as ocorrências da série
+  // 1. Validação de horário de funcionamento para todas as ocorrências
+  const espacoModel = require('./espacoModel');
+  let targetEspaco = null;
+  if (espaco_id) {
+    targetEspaco = await espacoModel.getEspacoById(espaco_id);
+  } else if (equipamento_id) {
+    const equip = await require('./equipamentoModel').getEquipamentoById(equipamento_id);
+    if (equip?.espaco_id) {
+      targetEspaco = await espacoModel.getEspacoById(equip.espaco_id);
+    }
+  }
+
+  if (targetEspaco) {
+    for (let i = 0; i < ocorrencias.length; i++) {
+      const oc = ocorrencias[i];
+      const valHorario = espacoModel.validarHorarioFuncionamento(targetEspaco, oc.data_inicio, oc.data_fim);
+      if (!valHorario.valido) {
+        return {
+          success: false,
+          ocorrenciaIndice: i + 1,
+          totalOcorrencias: ocorrencias.length,
+          data_conflito: oc.data_inicio,
+          error: `Horário inválido na ocorrência ${i + 1} de ${ocorrencias.length} (${new Date(oc.data_inicio).toLocaleString('pt-BR')}): ${valHorario.erro}`
+        };
+      }
+    }
+  }
+
+  // 2. Verificação rigorosa de conflito em TODAS as ocorrências da série
   for (let i = 0; i < ocorrencias.length; i++) {
     const oc = ocorrencias[i];
     const conflitos = await checkConflict({
       equipamento_id,
       espaco_id,
       data_inicio: oc.data_inicio,
-      data_fim: oc.data_fim
+      data_fim: oc.data_fim,
+      executor
     });
 
     if (conflitos.length > 0) {
@@ -514,7 +550,7 @@ async function createSerieRecorrente({
     }
   }
 
-  // 2. Com todas as ocorrências validadas sem conflito, cria o grupo da série
+  // 3. Com todas as ocorrências validadas sem conflito, cria o grupo da série
   const grupo_recorrencia_id = 'rec_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
   const criadas = [];
 
@@ -526,6 +562,9 @@ async function createSerieRecorrente({
       data_inicio: oc.data_inicio,
       data_fim: oc.data_fim,
       status: 'confirmada',
+      tipo: tipo || 'comum',
+      disciplina: disciplina || null,
+      turma: turma || null,
       finalidade: finalidade || null,
       observacoes: observacoes || null,
       grupo_recorrencia_id,
@@ -616,6 +655,7 @@ async function marcarNoShow(id, executor = pool) {
 
 /**
  * Verificação em lote de no-shows baseada na tolerância configurável (Bloco 08)
+ * Fase B: Isenta aulas de turmas (tipo = 'aula') para não gerar punição involuntária aos docentes.
  */
 async function verificarNoShowsAutomaticos(toleranciaMin = 15, executor = pool) {
   const toleranciaConfigurada = Number(toleranciaMin);
@@ -625,10 +665,11 @@ async function verificarNoShowsAutomaticos(toleranciaMin = 15, executor = pool) 
 
   // Lock eligible reservations so concurrent sweeps cannot audit the same no-show.
   const [candidatos] = await executor.query(`
-    SELECT r.id, r.usuario_id, r.data_inicio, r.finalidade
+    SELECT r.id, r.usuario_id, r.data_inicio, r.finalidade, r.tipo
     FROM \`${TABLE}\` r
     WHERE r.status = 'confirmada'
       AND (r.no_show = 0 OR r.no_show IS NULL)
+      AND (r.tipo IS NULL OR r.tipo != 'aula')
       AND r.data_inicio < DATE_SUB(NOW(), INTERVAL ? MINUTE)
       AND NOT EXISTS (
         SELECT 1 FROM utilizacao u WHERE u.reserva_id = r.id
@@ -644,6 +685,7 @@ async function verificarNoShowsAutomaticos(toleranciaMin = 15, executor = pool) 
       WHERE id = ?
         AND status = 'confirmada'
         AND (no_show = 0 OR no_show IS NULL)
+        AND (tipo IS NULL OR tipo != 'aula')
         AND data_inicio < DATE_SUB(NOW(), INTERVAL ? MINUTE)
         AND NOT EXISTS (
           SELECT 1 FROM utilizacao u WHERE u.reserva_id = \`${TABLE}\`.id
@@ -655,6 +697,190 @@ async function verificarNoShowsAutomaticos(toleranciaMin = 15, executor = pool) 
   return {
     totalMarcados: reservas.length,
     reservas
+  };
+}
+
+/**
+ * Prorrogação / Extensão formal de reserva (Fase B)
+ * Valida:
+ * 1. Status ativo ('confirmada' ou 'em_andamento')
+ * 2. Horário de funcionamento do espaço
+ * 3. Ausência de conflito na janela estendida
+ * 4. Preserva data_fim_original para histórico e auditoria
+ */
+async function estenderReserva({
+  id,
+  minutos,
+  justificativa,
+  usuarioId,
+  isPrivileged = false,
+  executor = pool
+}) {
+  const reserva = await getReservaById(id, executor);
+  if (!reserva) {
+    return { success: false, status: 404, error: 'Reserva não encontrada.' };
+  }
+
+  const ownerId = reserva.usuario_id || reserva.id_usuario;
+  if (!isPrivileged && String(ownerId) !== String(usuarioId)) {
+    return { success: false, status: 403, error: 'Você não tem permissão para estender esta reserva.' };
+  }
+
+  const statusAtual = (reserva.status || '').toLowerCase();
+  if (!['confirmada', 'em_andamento'].includes(statusAtual)) {
+    return {
+      success: false,
+      status: 400,
+      error: `Apenas reservas ativas podem ser estendidas (status atual: ${reserva.status}).`
+    };
+  }
+
+  const minExtensao = Number(minutos);
+  if (!Number.isInteger(minExtensao) || minExtensao < 5 || minExtensao > 240) {
+    return {
+      success: false,
+      status: 400,
+      error: 'O tempo de extensão deve ser um número inteiro entre 5 e 240 minutos.'
+    };
+  }
+
+  const currentEndDate = new Date(reserva.data_fim);
+  const newEndDate = new Date(currentEndDate.getTime() + minExtensao * 60 * 1000);
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const novaDataFimStr = `${newEndDate.getFullYear()}-${pad(newEndDate.getMonth() + 1)}-${pad(newEndDate.getDate())} ${pad(newEndDate.getHours())}:${pad(newEndDate.getMinutes())}:${pad(newEndDate.getSeconds())}`;
+  const dataInicioExtensaoStr = `${currentEndDate.getFullYear()}-${pad(currentEndDate.getMonth() + 1)}-${pad(currentEndDate.getDate())} ${pad(currentEndDate.getHours())}:${pad(currentEndDate.getMinutes())}:${pad(currentEndDate.getSeconds())}`;
+
+  // 1. Validação de horário de funcionamento do espaço
+  const espacoModel = require('./espacoModel');
+  let targetEspacoId = reserva.espaco_id;
+  if (!targetEspacoId && reserva.equipamento_id) {
+    const equip = await require('./equipamentoModel').getEquipamentoById(reserva.equipamento_id);
+    targetEspacoId = equip?.espaco_id;
+  }
+
+  if (targetEspacoId) {
+    const espaco = await espacoModel.getEspacoById(targetEspacoId, executor);
+    if (espaco) {
+      const valHorario = espacoModel.validarHorarioFuncionamento(espaco, reserva.data_inicio, novaDataFimStr);
+      if (!valHorario.valido) {
+        return {
+          success: false,
+          status: 400,
+          error: `Extensão não permitida pelo horário do espaço: ${valHorario.erro}`,
+          motivo: 'horario_funcionamento'
+        };
+      }
+    }
+  }
+
+  // 2. Validação de conflito no período estendido (entre data_fim atual e nova_data_fim)
+  const conflitos = await checkConflict({
+    equipamento_id: reserva.equipamento_id || null,
+    espaco_id: reserva.espaco_id || null,
+    data_inicio: dataInicioExtensaoStr,
+    data_fim: novaDataFimStr,
+    excludeId: reserva.id,
+    executor
+  });
+
+  if (conflitos.length > 0) {
+    const proxima = conflitos[0];
+    const recNome = proxima.equipamento_nome || proxima.espaco_nome || 'o recurso';
+    const usrNome = proxima.usuario_nome ? ` por ${proxima.usuario_nome}` : '';
+    return {
+      success: false,
+      status: 409,
+      error: `Não é possível estender o horário: já existe uma próxima reserva para ${recNome}${usrNome} iniciando em ${new Date(proxima.data_inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Por favor, encerre a utilização e libere o recurso.`,
+      motivo: 'conflito_proxima_reserva',
+      proximaReserva: proxima
+    };
+  }
+
+  // 3. Atualiza preservando histórico original
+  const dataFimOriginal = reserva.data_fim_original || reserva.data_fim;
+  await update(TABLE, id, {
+    data_fim: novaDataFimStr,
+    data_fim_original: dataFimOriginal,
+    prorrogada_ate: novaDataFimStr,
+    justificativa_prorrogacao: justificativa || 'Prorrogação solicitada pelo usuário'
+  }, executor);
+
+  const reservaAtualizada = await getReservaById(id, executor);
+  return {
+    success: true,
+    reserva: reservaAtualizada,
+    data_fim_anterior: reserva.data_fim,
+    data_fim_nova: novaDataFimStr,
+    minutos_estendidos: minExtensao
+  };
+}
+
+/**
+ * Emissão de alertas para término e proximidade de encerramento de reserva (Fase B)
+ */
+async function verificarAvisosHorario(executor = pool) {
+  const notificacaoModel = require('./notificacaoModel');
+
+  // 1. Reservas que encerram nos próximos 15 minutos
+  const [prestesAExpirar] = await executor.query(`
+    SELECT r.id, r.usuario_id, r.data_fim,
+           COALESCE(e.nome, s.nome, 'Recurso') AS recurso_nome
+    FROM \`${TABLE}\` r
+    LEFT JOIN equipamento e ON r.equipamento_id = e.id
+    LEFT JOIN espaco s ON r.espaco_id = s.id
+    WHERE r.status IN ('confirmada', 'em_andamento')
+      AND r.data_fim > NOW()
+      AND r.data_fim <= DATE_ADD(NOW(), INTERVAL 15 MINUTE)
+  `);
+
+  let avisos15min = 0;
+  for (const r of prestesAExpirar) {
+    const horaFim = new Date(r.data_fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const criado = await notificacaoModel.createForUser({
+      usuario_id: r.usuario_id,
+      tipo: 'aviso_termino_reserva',
+      titulo: 'Sua reserva termina em breve',
+      mensagem: `Sua reserva para ${r.recurso_nome} se encerra às ${horaFim} (em menos de 15 minutos). Caso precise de mais tempo e não haja conflito, solicite uma extensão antes do término.`,
+      link: '/reservas',
+      entidade: 'reserva',
+      entidade_id: r.id,
+      dedupe_key: `aviso_fim_15m:${r.id}`
+    }, executor);
+    if (criado) avisos15min++;
+  }
+
+  // 2. Reservas com horário encerrado recentemente (últimos 15 minutos)
+  const [encerradasRecentemente] = await executor.query(`
+    SELECT r.id, r.usuario_id, r.data_fim,
+           COALESCE(e.nome, s.nome, 'Recurso') AS recurso_nome
+    FROM \`${TABLE}\` r
+    LEFT JOIN equipamento e ON r.equipamento_id = e.id
+    LEFT JOIN espaco s ON r.espaco_id = s.id
+    WHERE r.status IN ('confirmada', 'em_andamento')
+      AND r.data_fim <= NOW()
+      AND r.data_fim >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+  `);
+
+  let avisosExpirados = 0;
+  for (const r of encerradasRecentemente) {
+    const criado = await notificacaoModel.createForUser({
+      usuario_id: r.usuario_id,
+      tipo: 'aviso_termino_reserva',
+      titulo: 'Horário de reserva encerrado',
+      mensagem: `O horário reservado para ${r.recurso_nome} foi encerrado. Por favor, conclua a utilização, realize o check-out e libere o espaço.`,
+      link: '/reservas',
+      entidade: 'reserva',
+      entidade_id: r.id,
+      dedupe_key: `aviso_fim_encerrado:${r.id}`
+    }, executor);
+    if (criado) avisosExpirados++;
+  }
+
+  return {
+    avisos15min,
+    avisosExpirados,
+    totalVerificados: prestesAExpirar.length + encerradasRecentemente.length
   };
 }
 
@@ -673,5 +899,8 @@ module.exports = {
   createSerieRecorrente,
   cancelarOcorrenciaRecorrente,
   marcarNoShow,
-  verificarNoShowsAutomaticos
+  verificarNoShowsAutomaticos,
+  estenderReserva,
+  verificarAvisosHorario
 };
+

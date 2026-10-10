@@ -90,33 +90,29 @@ async function startInventario(espacoId, usuarioId, observacoes = '', executor =
 }
 
 async function scanItem(inventarioId, scannedValue, usuarioId, executor = pool) {
-  const inventario = await getInventarioById(inventarioId, executor);
-  if (!inventario) throw new Error('Sessão de inventário não encontrada.');
-  if (inventario.status !== 'em_andamento') throw new Error('Esta sessão de inventário já foi finalizada.');
-
-  // Localiza o equipamento pelo ID, codigo_patrimonio, patrimonio_ufpi ou codigo_labcontrol
-  const term = String(scannedValue).trim();
-  const [equipRows] = await executor.query(`
-    SELECT e.*, esp.nome AS espaco_nome
-    FROM equipamento e
-    LEFT JOIN espaco esp ON e.espaco_id = esp.id
-    WHERE e.id = ? 
-       OR UPPER(e.codigo_patrimonio) = UPPER(?)
-       OR UPPER(e.patrimonio_ufpi) = UPPER(?)
-       OR UPPER(e.codigo_labcontrol) = UPPER(?)
-    LIMIT 1
-  `, [Number(term) || 0, term, term, term]);
-
-  const equipamento = equipRows[0];
-  if (!equipamento) {
-    throw new Error(`Nenhum equipamento cadastrado corresponde a "${scannedValue}".`);
+  // 1. Bloqueia a sessão de inventário para prevenir concorrência e encerramento simultâneo
+  const [sessaoRows] = await executor.query(
+    `SELECT * FROM \`${TABLE}\` WHERE id = ? FOR UPDATE`,
+    [inventarioId]
+  );
+  const inventario = sessaoRows[0];
+  if (!inventario) throw inventarioError('Sessão de inventário não encontrada.', 404);
+  if ((inventario.status || '').toLowerCase() !== 'em_andamento') {
+    throw inventarioError('Esta sessão de inventário já foi finalizada.', 409);
   }
 
-  // Verifica se já foi escaneado nesta sessão
+  // 2. Localiza o equipamento de forma inequívoca (JSON, LabControl, UFPI, ID)
+  const equipamento = await equipamentoModel.localizarPorIdentificadorQR(scannedValue, executor);
+  if (!equipamento) {
+    const rawDesc = typeof scannedValue === 'object' ? JSON.stringify(scannedValue) : String(scannedValue);
+    throw inventarioError(`Nenhum equipamento cadastrado corresponde a "${rawDesc}".`, 404);
+  }
+
+  // 3. Verifica se já foi escaneado nesta sessão com FOR UPDATE para evitar duplicidades concorrentes
   const [jaLido] = await executor.query(`
     SELECT * FROM \`${ITEM_TABLE}\`
     WHERE inventario_id = ? AND equipamento_id = ?
-    LIMIT 1
+    FOR UPDATE
   `, [inventarioId, equipamento.id]);
 
   if (jaLido.length > 0) {
@@ -124,15 +120,17 @@ async function scanItem(inventarioId, scannedValue, usuarioId, executor = pool) 
       jaConferido: true,
       item: jaLido[0],
       equipamento,
+      isDivergente: jaLido[0].status_conferencia === 'divergente',
       message: `Equipamento "${equipamento.nome}" já havia sido registrado nesta sessão.`
     };
   }
 
-  // Verifica compatibilidade de localização
+  // 4. Verifica compatibilidade de localização física com o cadastro
+  // REGRA CRÍTICA: O inventário NÃO altera automaticamente a localização do equipamento!
   const isLocalizacaoCorreta = Number(equipamento.espaco_id) === Number(inventario.espaco_id);
   const statusConferencia = isLocalizacaoCorreta ? 'conferido' : 'divergente';
 
-  // Insere o item conferido
+  // 5. Insere o item conferido mantendo o cadastro do equipamento intacto
   const [insItem] = await executor.query(`
     INSERT INTO \`${ITEM_TABLE}\` (
       inventario_id, equipamento_id, espaco_esperado_id, espaco_encontrado_id, status_conferencia, decisao_admin
@@ -146,7 +144,7 @@ async function scanItem(inventarioId, scannedValue, usuarioId, executor = pool) 
     isLocalizacaoCorreta ? 'conforme' : 'pendente'
   ]);
 
-  // Atualiza os contadores na sessão
+  // 6. Atualiza os contadores na sessão
   if (isLocalizacaoCorreta) {
     await executor.query(`UPDATE \`${TABLE}\` SET total_conferidos = total_conferidos + 1 WHERE id = ?`, [inventarioId]);
   } else {
@@ -172,7 +170,7 @@ async function scanItem(inventarioId, scannedValue, usuarioId, executor = pool) 
     isDivergente: !isLocalizacaoCorreta,
     message: isLocalizacaoCorreta 
       ? `Equipamento "${equipamento.nome}" conferido com sucesso!`
-      : `Divergência detectada! "${equipamento.nome}" pertence originalmente ao laboratório "${itemCriado[0].espaco_esperado_nome}".`
+      : `Divergência detectada! "${equipamento.nome}" pertence originalmente ao laboratório "${itemCriado[0].espaco_esperado_nome || 'não cadastrado'}".`
   };
 }
 
@@ -252,11 +250,18 @@ async function decidirDivergencia(inventarioId, itemId, acao, usuarioId, executo
 }
 
 async function finalizarInventario(inventarioId, executor = pool) {
-  const inventario = await getInventarioById(inventarioId, executor);
-  if (!inventario) throw new Error('Inventário não encontrado.');
-  if ((inventario.status || '').toLowerCase() !== 'em_andamento') {
-    throw new Error('Esta sessão de inventário já foi finalizada.');
+  // Bloqueio atômico da sessão para prevenir finalizações simultâneas concorrentes
+  const [sessaoRows] = await executor.query(
+    `SELECT id, status, espaco_id FROM \`${TABLE}\` WHERE id = ? FOR UPDATE`,
+    [inventarioId]
+  );
+  const sessao = sessaoRows[0];
+  if (!sessao) throw inventarioError('Inventário não encontrado.', 404);
+  if ((sessao.status || '').toLowerCase() !== 'em_andamento') {
+    throw inventarioError('Esta sessão de inventário já foi finalizada.', 409);
   }
+
+  const inventario = await getInventarioById(inventarioId, executor);
 
   // Identifica equipamentos esperados que não foram lidos
   const conferidosIds = inventario.itens.map(it => it.equipamento_id);
@@ -271,7 +276,7 @@ async function finalizarInventario(inventarioId, executor = pool) {
     `, [inventarioId, nl.id, inventario.espaco_id, inventario.espaco_id]);
   }
 
-  // Atualiza totais e finaliza
+  // Atualiza totais e finaliza atomicamente
   await executor.query(`
     UPDATE \`${TABLE}\`
     SET status = 'concluido',
@@ -283,11 +288,81 @@ async function finalizarInventario(inventarioId, executor = pool) {
   return getInventarioById(inventarioId, executor);
 }
 
+async function getRelatorioItens(filters = {}) {
+  let sql = `
+    SELECT it.*,
+           inv.espaco_id AS inventario_espaco_id,
+           inv.status AS inventario_status,
+           inv.data_inicio AS inventario_data_inicio,
+           inv.data_fim AS inventario_data_fim,
+           esp_inv.nome AS inventario_espaco_nome,
+           e.nome AS equipamento_nome, e.codigo_patrimonio, e.patrimonio_ufpi, e.codigo_labcontrol, e.status AS equipamento_status,
+           esp_esp.nome AS espaco_esperado_nome,
+           esp_enc.nome AS espaco_encontrado_nome,
+           u_dec.nome AS decisao_usuario_nome
+    FROM \`${ITEM_TABLE}\` it
+    JOIN \`${TABLE}\` inv ON it.inventario_id = inv.id
+    LEFT JOIN espaco esp_inv ON inv.espaco_id = esp_inv.id
+    LEFT JOIN equipamento e ON it.equipamento_id = e.id
+    LEFT JOIN espaco esp_esp ON it.espaco_esperado_id = esp_esp.id
+    LEFT JOIN espaco esp_enc ON it.espaco_encontrado_id = esp_enc.id
+    LEFT JOIN usuario u_dec ON it.decisao_usuario_id = u_dec.id
+  `;
+
+  const whereClauses = [];
+  const values = [];
+
+  if (filters.inventario_id) {
+    whereClauses.push('it.inventario_id = ?');
+    values.push(filters.inventario_id);
+  }
+  if (filters.espaco_id) {
+    whereClauses.push('(inv.espaco_id = ? OR it.espaco_esperado_id = ? OR it.espaco_encontrado_id = ?)');
+    values.push(filters.espaco_id, filters.espaco_id, filters.espaco_id);
+  }
+  if (filters.equipamento_id) {
+    whereClauses.push('it.equipamento_id = ?');
+    values.push(filters.equipamento_id);
+  }
+  if (filters.status_conferencia) {
+    whereClauses.push('it.status_conferencia = ?');
+    values.push(filters.status_conferencia);
+  }
+  if (filters.decisao_admin) {
+    whereClauses.push('it.decisao_admin = ?');
+    values.push(filters.decisao_admin);
+  }
+  if (filters.apenas_divergentes === true || filters.apenas_divergentes === 'true') {
+    whereClauses.push("it.status_conferencia = 'divergente'");
+  }
+  if (filters.data_inicio_de) {
+    whereClauses.push('COALESCE(it.data_leitura, it.created_at) >= ?');
+    values.push(filters.data_inicio_de);
+  }
+  if (filters.data_fim_ate) {
+    const dataAte = /^\d{4}-\d{2}-\d{2}$/.test(String(filters.data_fim_ate))
+      ? `${filters.data_fim_ate} 23:59:59`
+      : filters.data_fim_ate;
+    whereClauses.push('COALESCE(it.data_leitura, it.created_at) <= ?');
+    values.push(dataAte);
+  }
+
+  if (whereClauses.length > 0) {
+    sql += ` WHERE ${whereClauses.join(' AND ')}`;
+  }
+
+  sql += ' ORDER BY it.id DESC';
+
+  const [rows] = await pool.query(sql, values);
+  return rows;
+}
+
 module.exports = {
   TABLE,
   ITEM_TABLE,
   getAllInventarios,
   getInventarioById,
+  getRelatorioItens,
   startInventario,
   scanItem,
   decidirDivergencia,

@@ -12,19 +12,27 @@ async function registrarEvento({
     throw new Error('Entidade e ação são obrigatórias para registrar auditoria.');
   }
 
-  const [result] = await executor.query(`
-    INSERT INTO auditoria_evento
-      (equipamento_id, entidade, entidade_id, acao, usuario_id, detalhes)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `, [
-    equipamento_id || null,
-    entidade,
-    entidade_id === null || entidade_id === undefined ? null : String(entidade_id),
-    acao,
-    usuario_id || null,
-    JSON.stringify(detalhes)
-  ]);
-  return result.insertId;
+  try {
+    const [result] = await executor.query(`
+      INSERT INTO auditoria_evento
+        (equipamento_id, entidade, entidade_id, acao, usuario_id, detalhes)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [
+      equipamento_id || null,
+      entidade,
+      entidade_id === null || entidade_id === undefined ? null : String(entidade_id),
+      acao,
+      usuario_id || null,
+      JSON.stringify(detalhes)
+    ]);
+    return result.insertId;
+  } catch (err) {
+    if (err.code === 'ER_NO_SUCH_TABLE') {
+      console.warn('[Auditoria] Tabela auditoria_evento ausente. Aplique a migração 09.');
+      return null;
+    }
+    throw err;
+  }
 }
 
 async function listarEventosEquipamento(equipamentoId) {

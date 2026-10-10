@@ -64,7 +64,10 @@ async function start(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Inventario] Erro ao iniciar:', err);
-    res.status(500).json({ error: 'Erro ao iniciar sessão de inventário: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao iniciar sessão de inventário',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -115,7 +118,7 @@ async function scan(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Inventario] Erro ao escanear item:', err);
-    res.status(400).json({ error: err.message });
+    res.status(err.statusCode || 400).json({ error: err.message });
   } finally {
     if (connection) connection.release();
   }
@@ -237,15 +240,39 @@ async function finalizar(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Inventario] Erro ao finalizar:', err);
-    res.status(500).json({ error: 'Erro ao finalizar inventário: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao finalizar inventário',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
+  }
+}
+
+async function relatorioItens(req, res) {
+  try {
+    const filters = {};
+    if (req.query.inventario_id) filters.inventario_id = req.query.inventario_id;
+    if (req.query.espaco_id) filters.espaco_id = req.query.espaco_id;
+    if (req.query.equipamento_id) filters.equipamento_id = req.query.equipamento_id;
+    if (req.query.status_conferencia) filters.status_conferencia = req.query.status_conferencia;
+    if (req.query.decisao_admin) filters.decisao_admin = req.query.decisao_admin;
+    if (req.query.apenas_divergentes !== undefined) filters.apenas_divergentes = req.query.apenas_divergentes;
+    if (req.query.data_inicio_de) filters.data_inicio_de = req.query.data_inicio_de;
+    if (req.query.data_fim_ate) filters.data_fim_ate = req.query.data_fim_ate;
+
+    const itens = await inventarioModel.getRelatorioItens(filters);
+    res.json(itens);
+  } catch (err) {
+    console.error('[Inventario] Erro ao carregar relatório de itens:', err);
+    res.status(500).json({ error: 'Erro ao carregar relatório de itens do inventário' });
   }
 }
 
 module.exports = {
   list,
   getById,
+  relatorioItens,
   start,
   scan,
   decidirDivergencia,

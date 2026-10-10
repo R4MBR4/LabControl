@@ -81,7 +81,10 @@ async function create(req, res) {
   } catch (err) {
     if (connection && transactionStarted) await connection.rollback();
     console.error('[Capacitacao] Erro ao registrar:', err);
-    res.status(500).json({ error: 'Erro ao registrar capacitação: ' + err.message });
+    res.status(500).json({
+      error: 'Erro ao registrar capacitação',
+      detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     if (connection) connection.release();
   }
@@ -89,7 +92,14 @@ async function create(req, res) {
 
 async function update(req, res) {
   try {
-    const updated = await capacitacaoModel.updateCapacitacao(req.params.id, req.body);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'ID de capacitação inválido' });
+    }
+    const updated = await capacitacaoModel.updateCapacitacao(id, req.body);
+    if (!updated) {
+      return res.status(404).json({ error: 'Registro de capacitação não encontrado' });
+    }
     res.json(updated);
   } catch (err) {
     console.error('[Capacitacao] Erro ao atualizar:', err);
@@ -99,9 +109,13 @@ async function update(req, res) {
 
 async function remove(req, res) {
   try {
-    const success = await capacitacaoModel.deleteCapacitacao(req.params.id);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'ID de capacitação inválido' });
+    }
+    const success = await capacitacaoModel.deleteCapacitacao(id);
     if (!success) {
-      return res.status(404).json({ error: 'Registro não encontrado' });
+      return res.status(404).json({ error: 'Registro de capacitação não encontrado' });
     }
     res.json({ message: 'Capacitação removida com sucesso' });
   } catch (err) {

@@ -11,10 +11,12 @@ async function getAllManutencoes(filters = {}) {
   let sql = `
     SELECT m.*,
            e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo,
-           e.status AS equipamento_status, o.titulo AS ocorrencia_titulo
+           e.codigo_labcontrol AS equipamento_labcontrol, e.patrimonio_ufpi AS equipamento_patrimonio_ufpi,
+           e.status AS equipamento_status, e.espaco_id, esp.nome AS espaco_nome,
+           (SELECT COUNT(*) FROM \`${TABLE}\` m2 WHERE m2.\`${fkEquip}\` = m.\`${fkEquip}\`) AS total_manutencoes_equipamento
     FROM \`${TABLE}\` m
     LEFT JOIN \`equipamento\` e ON m.\`${fkEquip}\` = e.\`${equipPk}\`
-    LEFT JOIN \`ocorrencia\` o ON m.ocorrencia_id = o.id
+    LEFT JOIN \`espaco\` esp ON e.espaco_id = esp.id
   `;
 
   const whereClauses = [];
@@ -27,6 +29,28 @@ async function getAllManutencoes(filters = {}) {
   if (filters.status) {
     whereClauses.push(`m.status = ?`);
     values.push(filters.status);
+  }
+  if (filters.espaco_id) {
+    whereClauses.push(`e.espaco_id = ?`);
+    values.push(filters.espaco_id);
+  }
+  if (filters.tipo) {
+    whereClauses.push(`LOWER(m.tipo) = LOWER(?)`);
+    values.push(filters.tipo);
+  }
+  if (filters.recorrente === true || filters.recorrente === 'true' || filters.recorrente === '1') {
+    whereClauses.push(`(SELECT COUNT(*) FROM \`${TABLE}\` m2 WHERE m2.\`${fkEquip}\` = m.\`${fkEquip}\`) >= 2`);
+  }
+  if (filters.data_inicio_de) {
+    whereClauses.push(`m.data_inicio >= ?`);
+    values.push(filters.data_inicio_de);
+  }
+  if (filters.data_fim_ate) {
+    const dataAte = /^\d{4}-\d{2}-\d{2}$/.test(String(filters.data_fim_ate))
+      ? `${filters.data_fim_ate} 23:59:59`
+      : filters.data_fim_ate;
+    whereClauses.push(`m.data_inicio <= ?`);
+    values.push(dataAte);
   }
 
   if (whereClauses.length > 0) {
@@ -47,10 +71,9 @@ async function getManutencaoById(id, executor = pool) {
   const sql = `
     SELECT m.*,
            e.nome AS equipamento_nome, e.codigo_patrimonio AS equipamento_codigo,
-           e.status AS equipamento_status, o.titulo AS ocorrencia_titulo
+           e.status AS equipamento_status
     FROM \`${TABLE}\` m
     LEFT JOIN \`equipamento\` e ON m.\`${fkEquip}\` = e.\`${equipPk}\`
-    LEFT JOIN \`ocorrencia\` o ON m.ocorrencia_id = o.id
     WHERE m.\`${pk}\` = ?
     LIMIT 1
   `;
@@ -60,6 +83,8 @@ async function getManutencaoById(id, executor = pool) {
 
 async function getManutencaoByOcorrenciaId(ocorrenciaId, executor = pool) {
   const pk = await getPrimaryKey(TABLE);
+  const cols = await getTableColumns(TABLE);
+  if (!cols.includes('ocorrencia_id')) return null;
   const [rows] = await executor.query(
     `SELECT * FROM \`${TABLE}\` WHERE ocorrencia_id = ? ORDER BY \`${pk}\` DESC LIMIT 1`,
     [ocorrenciaId]

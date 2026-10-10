@@ -7,6 +7,7 @@ router.use(authenticateToken);
 
 // Consulta permitida a usuários autenticados
 router.get('/', inventarioController.list);
+router.get('/relatorio', authorizeAdmin, inventarioController.relatorioItens);
 router.get('/:id', inventarioController.getById);
 
 // Ações do inventário restritas a administradores

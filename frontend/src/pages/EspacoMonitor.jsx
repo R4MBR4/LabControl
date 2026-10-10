@@ -65,7 +65,7 @@ export default function EspacoMonitor() {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6">
         <div className="w-12 h-12 border-4 border-teal-400 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-slate-400 text-sm font-mono tracking-widest uppercase">Iniciando Modo Monitor...</p>
+        <p className="text-slate-400 text-sm font-mono tracking-widest uppercase">Iniciando Painel de Ocupação (Kiosk de Porta)...</p>
       </div>
     );
   }
@@ -100,17 +100,23 @@ export default function EspacoMonitor() {
             <Building2 className="w-6 h-6" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-mono font-bold tracking-widest text-teal-400 uppercase bg-teal-950/80 px-2.5 py-0.5 rounded border border-teal-800">
                 {espaco?.codigo || 'LAB'}
               </span>
               <span className="text-xs text-slate-400 font-medium">
                 {espaco?.localizacao || 'Campus UFPI'}
               </span>
+              <span className="hidden sm:inline text-[11px] text-teal-400/90 font-mono">
+                · Painel de Ocupação (Kiosk de Porta)
+              </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mt-0.5">
               {espaco?.nome || 'Laboratório'}
             </h1>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Exibição pública em tempo real para identificação visual e conferência de agendamento na entrada do espaço.
+            </p>
           </div>
         </div>
 

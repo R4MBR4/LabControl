@@ -10,7 +10,9 @@ async function getAllEquipamentos(filter = {}) {
   const cols = await getTableColumns(TABLE);
 
   let sql = `
-    SELECT e.*, s.nome AS espaco_nome
+    SELECT e.*, s.nome AS espaco_nome,
+           (SELECT COUNT(*) FROM utilizacao u WHERE u.equipamento_id = e.\`${pk}\`) AS total_utilizacoes,
+           (SELECT COUNT(*) FROM manutencao m WHERE m.equipamento_id = e.\`${pk}\`) AS total_manutencoes
   `;
 
   if (cols.includes('inativo_por_usuario_id')) {
@@ -307,6 +309,205 @@ async function getEquipamentoHistorico(id) {
   };
 }
 
+/**
+ * Localiza equipamento de forma inequívoca através de QR Code ou identificador.
+ * Suporta:
+ * 1. Payload JSON (gerado pelo sistema com { id, codigo_labcontrol, patrimonio_ufpi })
+ * 2. Código LabControl (ex: "LC-EQ-0001")
+ * 3. Patrimônio UFPI / Código de patrimônio (ex: "PAT-001", "123456")
+ * 4. ID numérico (ex: 5)
+ *
+ * Previne que identificadores ambíguos selecionem equipamento incorreto.
+ */
+async function localizarPorIdentificadorQR(scannedValue, executor = pool) {
+  if (!scannedValue) return null;
+
+  let parsed = null;
+  if (typeof scannedValue === 'object') {
+    parsed = scannedValue;
+  } else if (typeof scannedValue === 'string') {
+    const trimmed = scannedValue.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        parsed = null;
+      }
+    }
+  }
+
+  // Caso 1: Payload estruturado JSON
+  if (parsed && typeof parsed === 'object') {
+    const targetId = parsed.id || parsed.equipamento_id;
+    const targetLabControl = parsed.codigo_labcontrol;
+    const targetPatrimonio = parsed.patrimonio_ufpi || parsed.codigo_patrimonio || parsed.codigo;
+
+    if (targetId) {
+      const equip = await getEquipamentoById(targetId, executor);
+      if (!equip) return null;
+
+      // Validação de consistência se o payload trouxer códigos adicionais
+      if (targetLabControl && equip.codigo_labcontrol && equip.codigo_labcontrol.toUpperCase() !== String(targetLabControl).toUpperCase()) {
+        const err = new Error(`Inconsistência no QR Code: o ID #${targetId} não corresponde ao código LabControl "${targetLabControl}".`);
+        err.statusCode = 400;
+        throw err;
+      }
+      return equip;
+    }
+
+    if (targetLabControl) {
+      const [rows] = await executor.query(
+        `SELECT e.*, esp.nome AS espaco_nome FROM equipamento e LEFT JOIN espaco esp ON e.espaco_id = esp.id WHERE UPPER(e.codigo_labcontrol) = UPPER(?) LIMIT 2`,
+        [String(targetLabControl).trim()]
+      );
+      if (rows.length === 1) return rows[0];
+      if (rows.length > 1) {
+        const err = new Error(`Identificador ambíguo: múltiplos equipamentos com código LabControl "${targetLabControl}".`);
+        err.statusCode = 409;
+        throw err;
+      }
+    }
+
+    if (targetPatrimonio) {
+      const [rows] = await executor.query(
+        `SELECT e.*, esp.nome AS espaco_nome FROM equipamento e LEFT JOIN espaco esp ON e.espaco_id = esp.id WHERE UPPER(e.codigo_patrimonio) = UPPER(?) OR UPPER(e.patrimonio_ufpi) = UPPER(?) LIMIT 2`,
+        [String(targetPatrimonio).trim(), String(targetPatrimonio).trim()]
+      );
+      if (rows.length === 1) return rows[0];
+      if (rows.length > 1) {
+        const err = new Error(`Identificador ambíguo: múltiplos equipamentos correspondem ao patrimônio "${targetPatrimonio}".`);
+        err.statusCode = 409;
+        throw err;
+      }
+    }
+
+    return null;
+  }
+
+  // Caso 2: String ou número simples
+  const term = String(scannedValue).trim();
+  if (!term) return null;
+
+  // Busca candidatos por código LabControl exato
+  const [labMatches] = await executor.query(
+    `SELECT e.*, esp.nome AS espaco_nome FROM equipamento e LEFT JOIN espaco esp ON e.espaco_id = esp.id WHERE UPPER(e.codigo_labcontrol) = UPPER(?)`,
+    [term]
+  );
+  if (labMatches.length === 1) return labMatches[0];
+  if (labMatches.length > 1) {
+    const err = new Error(`Identificador ambíguo: múltiplos equipamentos com código LabControl "${term}".`);
+    err.statusCode = 409;
+    throw err;
+  }
+
+  // Busca candidatos por patrimônio oficial ou cadastrado
+  const [patMatches] = await executor.query(
+    `SELECT e.*, esp.nome AS espaco_nome FROM equipamento e LEFT JOIN espaco esp ON e.espaco_id = esp.id WHERE UPPER(e.codigo_patrimonio) = UPPER(?) OR UPPER(e.patrimonio_ufpi) = UPPER(?)`,
+    [term, term]
+  );
+
+  const isNumeric = /^\d+$/.test(term);
+  let idMatch = null;
+  if (isNumeric) {
+    idMatch = await getEquipamentoById(Number(term), executor);
+  }
+
+  // Se houver conflito entre patrimônio e ID de equipamentos distintos, é ambíguo!
+  if (patMatches.length > 0 && idMatch && !patMatches.some(e => e.id === idMatch.id)) {
+    const err = new Error(`Identificador ambíguo: o termo "${term}" corresponde ao patrimônio do equipamento #${patMatches[0].id} e ao ID do equipamento #${idMatch.id}. Utilize o QR Code ou código LabControl.`);
+    err.statusCode = 409;
+    throw err;
+  }
+
+  if (patMatches.length === 1) return patMatches[0];
+  if (patMatches.length > 1) {
+    const err = new Error(`Identificador ambíguo: múltiplos equipamentos encontrados para o patrimônio "${term}".`);
+    err.statusCode = 409;
+    throw err;
+  }
+
+  if (idMatch) return idMatch;
+
+  return null;
+}
+
+/**
+ * Geração de dados de etiquetas em lote para múltiplos equipamentos selecionados.
+ * Retorna os dados normalizados (QR payload, nome, código LabControl, patrimônio UFPI se disponível).
+ * Não gera dados fictícios.
+ */
+async function gerarEtiquetasEmLote(ids, executor = pool) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return [];
+  }
+
+  const numericIds = ids.map(id => Number(id)).filter(id => !Number.isNaN(id) && id > 0);
+  if (numericIds.length === 0) return [];
+
+  const [rows] = await executor.query(`
+    SELECT e.id, e.nome, e.codigo_patrimonio, e.patrimonio_ufpi, e.codigo_labcontrol, e.status, e.inativo,
+           esp.nome AS espaco_nome, esp.codigo AS espaco_codigo
+    FROM equipamento e
+    LEFT JOIN espaco esp ON e.espaco_id = esp.id
+    WHERE e.id IN (?)
+    ORDER BY e.id ASC
+  `, [numericIds]);
+
+  let QRCode = null;
+  try {
+    QRCode = require('qrcode');
+  } catch {
+    QRCode = null;
+  }
+
+  const etiquetas = [];
+  for (const equip of rows) {
+    const equipId = equip.id;
+    const codigoLab = equip.codigo_labcontrol || `LC-EQ-${String(equipId).padStart(4, '0')}`;
+    const patrimonioUfpi = equip.patrimonio_ufpi || null;
+
+    const payloadObj = {
+      id: equipId,
+      codigo_labcontrol: codigoLab,
+      nome: equip.nome,
+      action: 'LABCONTROL_CHECKIN_CHECKOUT'
+    };
+
+    if (patrimonioUfpi) {
+      payloadObj.patrimonio_ufpi = patrimonioUfpi;
+    }
+
+    const payloadStr = JSON.stringify(payloadObj);
+    let qrDataUrl = null;
+    if (QRCode) {
+      try {
+        qrDataUrl = await QRCode.toDataURL(payloadStr, {
+          errorCorrectionLevel: 'H',
+          margin: 2,
+          width: 250,
+          color: { dark: '#1e293b', light: '#ffffff' }
+        });
+      } catch {
+        qrDataUrl = null;
+      }
+    }
+
+    etiquetas.push({
+      id: equipId,
+      nome: equip.nome,
+      codigo_labcontrol: codigoLab,
+      patrimonio_ufpi: patrimonioUfpi,
+      espaco_nome: equip.espaco_nome || null,
+      status: equip.status,
+      inativo: equip.inativo === 1,
+      qr_payload: payloadStr,
+      qr_data_url: qrDataUrl
+    });
+  }
+
+  return etiquetas;
+}
+
 module.exports = {
   TABLE,
   getAllEquipamentos,
@@ -317,5 +518,7 @@ module.exports = {
   reativarEquipamento,
   deleteEquipamento,
   updateStatus,
-  getEquipamentoHistorico
+  getEquipamentoHistorico,
+  localizarPorIdentificadorQR,
+  gerarEtiquetasEmLote
 };
