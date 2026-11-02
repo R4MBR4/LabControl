@@ -215,6 +215,7 @@ export default function CheckinCheckout() {
         text: `Check-in realizado com sucesso para o equipamento! Status atualizado para "em_uso".`
       });
       setCheckinObs('');
+      handleClearIdentified();
       loadData();
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao realizar check-in');
@@ -268,6 +269,7 @@ export default function CheckinCheckout() {
       setCheckoutObs('');
       setCheckoutFoto(null);
       setCheckoutFotoMeta(null);
+      handleClearIdentified();
       loadData();
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao realizar check-out');

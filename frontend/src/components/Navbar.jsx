@@ -38,6 +38,18 @@ export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [opMode, setOpMode] = useState(getOperatingMode());
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     const handler = (e) => setOpMode(e.detail?.mode || getOperatingMode());
@@ -77,7 +89,14 @@ export default function Navbar() {
   const isActive = (path) => location.pathname === path || (path !== '/dashboard' && location.pathname.startsWith(path));
 
   return (
-    <nav className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-xs w-full">
+    <>
+      {!isOnline && (
+        <div className="bg-amber-600 text-white text-[11px] font-medium py-1.5 px-3 text-center flex items-center justify-center gap-1.5 print:hidden shadow-xs z-50 sticky top-0">
+          <span className="w-2 h-2 rounded-full bg-amber-200 animate-pulse"></span>
+          Modo Offline Ativo (PWA) — Operando com dados locais salvos em cache. O sistema sincronizará quando a conexão retornar.
+        </div>
+      )}
+      <nav className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-xs w-full print:hidden">
       <div className="max-w-7xl mx-auto px-2 sm:px-4">
         <div className="flex justify-between items-center h-14 sm:h-16 gap-1 min-w-0">
           {/* Lado Esquerdo: Logo + Links Compactos sem Vão */}
@@ -279,5 +298,6 @@ export default function Navbar() {
       )}
       {globalSearchOpen && <BuscaGlobal onClose={() => setGlobalSearchOpen(false)} />}
     </nav>
+    </>
   );
 }

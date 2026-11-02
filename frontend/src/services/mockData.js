@@ -43,9 +43,9 @@ const initialData = {
     }
   ],
   usuarios: [
-    { id: 1, nome: 'Administrador Demo', email: 'admin@labcontrol.com', perfil: 'ADMIN', matricula: 'ADM-001', status: 'ATIVO', departamento: 'Coordenação de Laboratórios' },
-    { id: 2, nome: 'Prof. Carlos Santos', email: 'professor@labcontrol.com', perfil: 'PROFESSOR', matricula: 'DOC-102', status: 'ATIVO', departamento: 'Engenharia e Automação' },
-    { id: 3, nome: 'Mariana Lima', email: 'aluno@labcontrol.com', perfil: 'ALUNO', matricula: 'DIS-2024-05', status: 'ATIVO', departamento: 'Ciência da Computação' }
+    { id: 1, nome: 'Administrador Demo', email: 'admin@labcontrol.com', perfil: 'ADMIN', matricula: 'ADM-001', status: 'ATIVO', email_confirmado: true, departamento: 'Coordenação de Laboratórios' },
+    { id: 2, nome: 'Prof. Carlos Santos', email: 'professor@labcontrol.com', perfil: 'PROFESSOR', matricula: 'DOC-102', status: 'ATIVO', email_confirmado: true, departamento: 'Engenharia e Automação' },
+    { id: 3, nome: 'Mariana Lima', email: 'aluno@labcontrol.com', perfil: 'ALUNO', matricula: 'DIS-2024-05', status: 'ATIVO', email_confirmado: true, departamento: 'Ciência da Computação' }
   ],
   espacos: [
     { id: 1, nome: 'Laboratório de Informática 1', codigo: 'LAB-INF-01', capacidade: 35, localizacao: 'Bloco B - Sala 204', status: 'DISPONIVEL', descricao: 'Equipado com 35 estações de trabalho e projetor interativo.' },
@@ -369,25 +369,54 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
 
   // 1. AUTENTICAÇÃO
   if (cleanUrl === '/auth/login') {
-    const email = (data?.email || '').toLowerCase();
-    let perfil = 'ADMIN';
-    let nome = 'Administrador Demo';
-    if (email.includes('aluno')) {
-      perfil = 'ALUNO';
-      nome = 'Mariana Lima';
-    } else if (email.includes('prof')) {
-      perfil = 'PROFESSOR';
-      nome = 'Prof. Carlos Santos';
+    const email = (data?.email || '').toLowerCase().trim();
+    const senha = (data?.senha || '').trim();
+
+    if (!email || !senha) {
+      return { data: { error: 'E-mail institucional e senha são obrigatórios.' }, status: 400, statusText: 'Bad Request' };
     }
 
-    const usuario = {
-      id: perfil === 'ADMIN' ? 1 : perfil === 'PROFESSOR' ? 2 : 3,
-      nome,
-      email: data?.email || 'admin@labcontrol.com',
-      perfil,
-      status: 'ATIVO',
-      matricula: 'DEMO-' + Math.floor(1000 + Math.random() * 9000)
-    };
+    db.usuarios = db.usuarios || [];
+    let usuario = db.usuarios.find(u => (u.email || '').toLowerCase() === email);
+
+    if (!usuario) {
+      if (email === 'admin@labcontrol.com') {
+        usuario = { id: 1, nome: 'Administrador Demo', email: 'admin@labcontrol.com', perfil: 'ADMIN', matricula: 'ADM-001', status: 'ATIVO', departamento: 'Coordenação de Laboratórios' };
+      } else if (email === 'professor@labcontrol.com') {
+        usuario = { id: 2, nome: 'Prof. Carlos Santos', email: 'professor@labcontrol.com', perfil: 'PROFESSOR', matricula: 'DOC-102', status: 'ATIVO', departamento: 'Engenharia e Automação' };
+      } else if (email === 'aluno@labcontrol.com') {
+        usuario = { id: 3, nome: 'Mariana Lima', email: 'aluno@labcontrol.com', perfil: 'ALUNO', matricula: 'DIS-2024-05', status: 'ATIVO', departamento: 'Ciência da Computação' };
+      }
+    }
+
+    if (!usuario) {
+      return { data: { error: 'Credenciais inválidas: e-mail institucional não cadastrado.' }, status: 401, statusText: 'Unauthorized' };
+    }
+
+    const validPasswords = ['admin123'];
+    if (usuario.perfil === 'PROFESSOR') validPasswords.push('prof123');
+    if (usuario.perfil === 'ALUNO') validPasswords.push('aluno123');
+    if (usuario.senha) validPasswords.push(usuario.senha);
+
+    if (!validPasswords.includes(senha)) {
+      return { data: { error: 'Credenciais inválidas: senha incorreta.' }, status: 401, statusText: 'Unauthorized' };
+    }
+
+    if (String(usuario.status).toUpperCase() === 'INATIVO') {
+      return { data: { error: 'Usuário inativo. Contate o administrador do laboratório.' }, status: 403, statusText: 'Forbidden' };
+    }
+
+    if (usuario.email_confirmado === false || String(usuario.status).toUpperCase() === 'PENDENTE') {
+      return {
+        data: {
+          error: 'E-mail não confirmado. Verifique a mensagem institucional para ativar sua conta.',
+          pendenteConfirmacao: true
+        },
+        status: 403,
+        statusText: 'Forbidden'
+      };
+    }
+
     return ok({
       token: 'demo-jwt-token-' + Date.now(),
       usuario
@@ -401,41 +430,68 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
   }
 
   if (cleanUrl === '/auth/cadastro' && method.toUpperCase() === 'POST') {
-    const { nome, email, perfil, matricula, departamento } = data || {};
+    const { nome, email, perfil, matricula, departamento, senha, confirmacaoSenha, confirmacao_senha } = data || {};
     if (!nome || !email) {
       return { data: { error: 'Nome e e-mail institucional são obrigatórios.' }, status: 400, statusText: 'Bad Request' };
     }
+
+    const confSenha = confirmacaoSenha || confirmacao_senha;
+    if (senha && confSenha && senha !== confSenha) {
+      return { data: { error: 'A senha e a confirmação de senha não coincidem.' }, status: 400, statusText: 'Bad Request' };
+    }
+
+    const emailLower = String(email).trim().toLowerCase();
+    const isInstitutional = /@(?:[a-zA-Z0-9-]+.)*(?:ufpi\.edu\.br|aluno\.ufpi\.edu\.br|ufpi\.br|labcontrol\.com|edu\.br)$/i.test(emailLower);
+    if (!isInstitutional) {
+      return {
+        data: { error: 'O e-mail deve ser um endereço institucional válido (ex: @ufpi.edu.br, @aluno.ufpi.edu.br ou @ufpi.br). Domínios públicos como @gmail.com não são permitidos.' },
+        status: 400,
+        statusText: 'Bad Request'
+      };
+    }
+
     const safePerfil = (perfil || 'aluno').toLowerCase() === 'professor' ? 'PROFESSOR' : 'ALUNO';
+    const codigoConfirmacao = 'DEMO-' + Math.floor(1000 + Math.random() * 9000);
+
     const novoUsuario = {
       id: Date.now(),
       nome,
-      email: email.toLowerCase(),
+      email: emailLower,
+      senha: senha || 'aluno123',
       perfil: safePerfil,
       status: 'PENDENTE',
       email_confirmado: false,
+      token_confirmacao: codigoConfirmacao,
       matricula: matricula || `MAT-${Math.floor(1000 + Math.random() * 9000)}`,
       departamento: departamento || 'Departamento Acadêmico'
     };
+
     db.usuarios = db.usuarios || [];
     db.usuarios.push(novoUsuario);
     saveStorage(db);
     return ok({
-      message: 'Cadastro institucional realizado com sucesso! Utilize o código de confirmação para ativar o acesso.',
-      token_simulado: 'DEMO-' + Math.floor(1000 + Math.random() * 9000),
+      message: 'Cadastro institucional realizado com sucesso! Utilize o código de confirmação abaixo para ativar seu acesso.',
+      token_simulado: codigoConfirmacao,
       usuario: novoUsuario
     });
   }
 
   if (cleanUrl === '/auth/confirmar-email' && method.toUpperCase() === 'POST') {
-    const pendingUser = (db.usuarios || []).find(u => u.status === 'PENDENTE');
+    const token = (data?.token || '').trim();
+    db.usuarios = db.usuarios || [];
+    const pendingUser = db.usuarios.find(u =>
+      (u.status === 'PENDENTE' || u.email_confirmado === false) &&
+      (!token || u.token_confirmacao === token || (token.startsWith('DEMO-') && String(u.token_confirmacao || '').startsWith('DEMO-')) || token === '123456')
+    );
     if (pendingUser) {
       pendingUser.status = 'ATIVO';
       pendingUser.email_confirmado = true;
       saveStorage(db);
+      return ok({
+        message: 'E-mail confirmado com sucesso! Sua conta está ativada para login.'
+      });
     }
-    return ok({
-      message: 'E-mail confirmado com sucesso! Sua conta está ativada para login.'
-    });
+    return { data: { error: 'Código de confirmação inválido ou usuário não encontrado.' }, status: 400, statusText: 'Bad Request' };
   }
 
   if (cleanUrl === '/busca') {
@@ -714,7 +770,10 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
     }
 
     if (cleanUrl.match(/\/espacos\/\d+\/monitor/)) {
-      const esp = db.espacos.find(e => e.id === id) || db.espacos[0];
+      const esp = db.espacos.find(e => e.id === id);
+      if (!esp) {
+        return { data: { error: 'Laboratório ou espaço não encontrado.' }, status: 404, statusText: 'Not Found' };
+      }
       const equipamentos = db.equipamentos.filter(e => e.espaco_id === id && !e.inativo);
       const reservas = db.reservas.filter(r => r.espaco_id === id);
       const reservaAtual = reservas.find(r => r.status === 'em_andamento') || null;
@@ -926,6 +985,8 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
     }
 
     return ok({
+      id: equip.id,
+      ...equip,
       equipamento: equip,
       utilizacaoAtiva: utilizacaoAtiva || null,
       fluxoRecomendado,
@@ -1253,7 +1314,7 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
     return ok(utilizacoes);
   }
   if (cleanUrl === '/utilizacoes/ativas') {
-    return ok(db.utilizacoes.filter(u => u.status === 'EM_USO'));
+    return ok(db.utilizacoes.filter(u => String(u.status || '').toLowerCase() === 'em_uso'));
   }
   if (cleanUrl === '/utilizacoes/checkin') {
     const eq = db.equipamentos.find(e => e.id === Number(data.equipamento_id));
@@ -1267,11 +1328,14 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
       equipamento_nome: eq ? eq.nome : 'Equipamento',
       data_inicio: new Date().toISOString(),
       data_fim: null,
-      status: 'EM_USO',
+      status: 'em_uso',
       observacoes: data.observacoes || 'Check-in realizado via QR Code'
     };
     db.utilizacoes.unshift(nova);
-    if (eq) eq.status = 'EM_USO';
+    if (eq) {
+      eq.status = 'em_uso';
+      eq.status_operacional = 'em_uso';
+    }
     saveStorage(db);
     return ok(nova);
   }
@@ -1821,6 +1885,70 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
       const itens = (db.inventario_itens || []).filter(it => it.inventario_id === invId);
       return ok({ ...inv, esperados, itens });
     }
+  }
+
+  // 15. INTEGRAÇÃO & EXPORTAÇÃO CSV
+  if (cleanUrl.match(/^\/integracao\/exportar\/([a-zA-Z0-9_-]+)$/) && method.toUpperCase() === 'GET') {
+    const dataset = cleanUrl.split('/')[3];
+    let items = [];
+    if (dataset === 'equipamentos') items = db.equipamentos || [];
+    else if (dataset === 'laboratorios' || dataset === 'espacos') items = db.espacos || [];
+    else if (dataset === 'reservas') items = db.reservas || [];
+    else if (dataset === 'utilizacoes') items = db.utilizacoes || [];
+    else if (dataset === 'ocorrencias') items = db.ocorrencias || [];
+    else if (dataset === 'manutencoes') items = db.manutencoes || [];
+    else if (dataset === 'consumiveis') items = db.consumiveis || [];
+    else if (dataset === 'inventarios') items = db.inventarios || [];
+    else if (dataset === 'itens_inventario') items = db.inventario_itens || [];
+
+    const OMITTED = new Set(['foto_evidencia', 'foto_metadata', 'senha', 'password', 'imagem', 'image']);
+    let headers = [];
+    if (items.length > 0) {
+      headers = Object.keys(items[0]).filter(k => !OMITTED.has(k.toLowerCase()));
+    } else {
+      headers = ['id', 'nome', 'descricao', 'status', 'criado_em'];
+    }
+
+    const escapeCsv = (val) => {
+      if (val === null || val === undefined) return '';
+      const str = typeof val === 'object' ? JSON.stringify(val) : String(val);
+      if (/[;"\r\n]/.test(str)) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const headerLine = headers.map(escapeCsv).join(';');
+    const rowLines = items.map(item => headers.map(h => escapeCsv(item[h])).join(';'));
+    const csvContent = '\uFEFF' + [headerLine, ...rowLines].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+
+    return {
+      data: blob,
+      status: 200,
+      statusText: 'OK',
+      headers: {
+        'content-type': 'text/csv; charset=utf-8',
+        'content-disposition': `attachment; filename="labcontrol-${dataset}-${new Date().toISOString().slice(0, 10)}.csv"`
+      }
+    };
+  }
+
+  if (cleanUrl === '/integracao/equipamentos/previa' && method.toUpperCase() === 'POST') {
+    return ok({
+      summary: { total: 3, validos: 3, invalidos: 0, laboratorios_inexistentes: 0, categorias_pendentes: 0 },
+      issues: [],
+      categoryCatalog: ['Fabricação Digital', 'Informática', 'Instrumentação', 'Robótica', 'Óptica'],
+      categoryReview: [],
+      rows: []
+    });
+  }
+
+  if (cleanUrl === '/integracao/equipamentos/importar' && method.toUpperCase() === 'POST') {
+    return ok({
+      message: 'Equipamentos importados com sucesso no modo demonstração.',
+      importados: 3
+    });
   }
 
   // Fallback genérico para qualquer outra rota

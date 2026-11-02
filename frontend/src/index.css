@@ -244,3 +244,58 @@ textarea:focus-visible {
     scroll-behavior: auto !important;
   }
 }
+
+/* =========================================================================
+   Estilos Padronizados para Impressão e PDF (TM65: Sem corte e sem menus)
+   ========================================================================= */
+@media print {
+  nav,
+  footer,
+  aside,
+  button,
+  .no-print,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  body, html {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 11pt !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tfoot {
+    display: table-footer-group !important;
+  }
+
+  @page {
+    margin: 1.2cm 1cm;
+    size: auto;
+  }
+}

@@ -51,7 +51,7 @@ function LayoutWithNavbar() {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
-      <footer className="py-4 border-t border-slate-200 bg-white text-center text-xs text-slate-400">
+      <footer className="py-4 border-t border-slate-200 bg-white text-center text-xs text-slate-400 print:hidden">
         LabControl &copy; {new Date().getFullYear()} — Plataforma de Gestão e Rastreabilidade de Espaços e Equipamentos Educacionais
       </footer>
     </div>

@@ -120,7 +120,13 @@ export default function Login() {
         confirmacaoSenha: cadastroData.confirmacaoSenha
       });
 
-      setSuccess(res.data.message || 'Cadastro realizado com sucesso! Verifique seu e-mail institucional.');
+      const successText = res.data.token_simulado
+        ? `${res.data.message || 'Cadastro realizado com sucesso!'} Código de confirmação: ${res.data.token_simulado}`
+        : (res.data.message || 'Cadastro realizado com sucesso! Verifique seu e-mail institucional.');
+      setSuccess(successText);
+      if (res.data.token_simulado) {
+        setTokenConfirmacao(res.data.token_simulado);
+      }
       setEmail(cadastroData.email);
       setCadastroData({
         nome: '',
