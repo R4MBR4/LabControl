@@ -877,39 +877,6 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
       documentos: (db.documentos_tecnicos || []).filter((item) => Number(item.equipamento_id) === id)
     });
   }
-  if (cleanUrl.startsWith('/equipamentos/')) {
-    const id = Number(cleanUrl.split('/')[2]);
-    if (method.toUpperCase() === 'PUT') {
-      const idx = db.equipamentos.findIndex(e => e.id === id);
-      if (idx !== -1) {
-        db.equipamentos[idx] = { ...db.equipamentos[idx], ...data };
-        saveStorage(db);
-        return ok(db.equipamentos[idx]);
-      }
-    }
-    if (method.toUpperCase() === 'DELETE') {
-      const hasHistory = db.utilizacoes.some(u => u.equipamento_id === id) ||
-                         db.ocorrencias.some(o => o.equipamento_id === id) ||
-                         db.manutencoes.some(m => m.equipamento_id === id);
-      if (hasHistory) {
-        const idx = db.equipamentos.findIndex(e => e.id === id);
-        if (idx !== -1) {
-          db.equipamentos[idx].status = 'inativo';
-          db.equipamentos[idx].inativo = 1;
-          db.equipamentos[idx].inativo_em = new Date().toISOString();
-          db.equipamentos[idx].motivo_inativacao = 'Inativação automática por possuir registros históricos de uso.';
-          saveStorage(db);
-          return ok({ inativado: true, message: 'Equipamento possui histórico e foi inativado para preservar os dados.' });
-        }
-      }
-      db.equipamentos = db.equipamentos.filter(e => e.id !== id);
-      saveStorage(db);
-      return ok({ inativado: false, message: 'Equipamento sem histórico removido com sucesso' });
-    }
-    const equip = db.equipamentos.find(e => e.id === id);
-    return ok(equip || db.equipamentos[0]);
-  }
-
   if (cleanUrl === '/equipamentos/identificar-qr' && method.toUpperCase() === 'POST') {
     const rawValue = data?.scanned_value || data?.codigo || '';
     let parsed = null;
@@ -966,6 +933,41 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
       podeCheckout: Boolean(utilizacaoAtiva)
     });
   }
+
+  if (cleanUrl.startsWith('/equipamentos/')) {
+    const id = Number(cleanUrl.split('/')[2]);
+    if (method.toUpperCase() === 'PUT') {
+      const idx = db.equipamentos.findIndex(e => e.id === id);
+      if (idx !== -1) {
+        db.equipamentos[idx] = { ...db.equipamentos[idx], ...data };
+        saveStorage(db);
+        return ok(db.equipamentos[idx]);
+      }
+    }
+    if (method.toUpperCase() === 'DELETE') {
+      const hasHistory = db.utilizacoes.some(u => u.equipamento_id === id) ||
+                         db.ocorrencias.some(o => o.equipamento_id === id) ||
+                         db.manutencoes.some(m => m.equipamento_id === id);
+      if (hasHistory) {
+        const idx = db.equipamentos.findIndex(e => e.id === id);
+        if (idx !== -1) {
+          db.equipamentos[idx].status = 'inativo';
+          db.equipamentos[idx].inativo = 1;
+          db.equipamentos[idx].inativo_em = new Date().toISOString();
+          db.equipamentos[idx].motivo_inativacao = 'Inativação automática por possuir registros históricos de uso.';
+          saveStorage(db);
+          return ok({ inativado: true, message: 'Equipamento possui histórico e foi inativado para preservar os dados.' });
+        }
+      }
+      db.equipamentos = db.equipamentos.filter(e => e.id !== id);
+      saveStorage(db);
+      return ok({ inativado: false, message: 'Equipamento sem histórico removido com sucesso' });
+    }
+    const equip = db.equipamentos.find(e => e.id === id);
+    return ok(equip || db.equipamentos[0]);
+  }
+
+
 
   // 5. RESERVAS
   if (cleanUrl === '/reservas') {
