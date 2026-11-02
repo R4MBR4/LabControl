@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import api from '../services/api';
+import api, { getOperatingMode, setOperatingMode } from '../services/api';
 import {
   Cpu,
   Lock,
@@ -47,6 +47,8 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [opMode, setOpMode] = useState(getOperatingMode());
+  const [isNetErr, setIsNetErr] = useState(false);
 
   // Detecta parâmetros de URL (ex: ?token=xxx ou ?tab=cadastro)
   useEffect(() => {
@@ -80,8 +82,11 @@ export default function Login() {
       await login(email, senha);
       navigate('/dashboard');
     } catch (err) {
-      const errMsg = err.response?.data?.error || 'Falha ao autenticar. Verifique seus dados.';
+      const errMsg = err.response?.data?.error || err.message || 'Falha ao autenticar. Verifique seus dados.';
       setError(errMsg);
+      if (err.isNetworkError || err.code === 'ERR_NETWORK' || errMsg.includes('servidor')) {
+        setIsNetErr(true);
+      }
 
       // Se conta estiver pendente de confirmação, sugere fluxo de ativação
       if (err.response?.data?.pendenteConfirmacao) {
@@ -194,13 +199,53 @@ export default function Login() {
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-6 shadow-xl rounded-2xl sm:px-10 border border-slate-200 space-y-6">
+          {/* Seletor de Modo de Apresentação / Nuvem */}
+          <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${opMode === 'demo' ? 'bg-purple-600 animate-pulse' : 'bg-emerald-500'}`} />
+              <span className="font-bold text-slate-800">
+                {opMode === 'demo' ? 'Modo Apresentação (Offline)' : 'Banco em Nuvem (TiDB)'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const next = opMode === 'demo' ? 'cloud' : 'demo';
+                setOperatingMode(next);
+                setOpMode(next);
+                setError('');
+                setIsNetErr(false);
+              }}
+              className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 transition shadow-2xs cursor-pointer"
+            >
+              {opMode === 'demo' ? 'Ativar Nuvem TiDB' : 'Ativar Modo Apresentação'}
+            </button>
+          </div>
           {/* Mensagens de Alerta e Feedback */}
           {error && (
-            <div role="alert" className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-start gap-2.5">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="font-semibold">{error}</p>
+            <div role="alert" className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 space-y-2">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-semibold">{error}</p>
+                </div>
               </div>
+              {isNetErr && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOperatingMode('demo');
+                    setOpMode('demo');
+                    setError('');
+                    setIsNetErr(false);
+                    handleQuickLogin('admin@labcontrol.com', 'admin123');
+                  }}
+                  className="w-full py-2 px-3 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Ativar Modo Apresentação e Entrar como Admin
+                </button>
+              )}
             </div>
           )}
 
@@ -304,22 +349,30 @@ export default function Login() {
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 text-center mb-2.5">
                   Acesso Rápido de Testes (Perfis Homologados)
                 </p>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => handleQuickLogin('admin@labcontrol.com', 'admin123')}
-                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold transition cursor-pointer"
+                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold transition cursor-pointer shadow-2xs"
                   >
-                    <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
-                    <span>Entrar como Admin</span>
+                    <ShieldCheck className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                    <span>Admin</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickLogin('professor@labcontrol.com', 'admin123')}
+                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold transition cursor-pointer shadow-2xs"
+                  >
+                    <GraduationCap className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span>Professor</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleQuickLogin('aluno@labcontrol.com', 'aluno123')}
-                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl border border-teal-200 bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs font-bold transition cursor-pointer"
+                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl border border-teal-200 bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs font-bold transition cursor-pointer shadow-2xs"
                   >
-                    <UserCheck className="w-3.5 h-3.5 text-teal-600" />
-                    <span>Entrar como Aluno</span>
+                    <UserCheck className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                    <span>Aluno</span>
                   </button>
                 </div>
               </div>

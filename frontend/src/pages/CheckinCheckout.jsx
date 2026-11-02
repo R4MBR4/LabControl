@@ -112,10 +112,26 @@ export default function CheckinCheckout() {
         });
       }
     } catch (err) {
-      // Fallback para busca local caso backend retorne erro de formato
-      const search = String(scannedValue).toUpperCase().trim();
+      // Fallback para busca local com suporte a JSON estruturado
+      let parsedLocal = null;
+      if (typeof scannedValue === 'object' && scannedValue !== null) {
+        parsedLocal = scannedValue;
+      } else if (typeof scannedValue === 'string') {
+        const trimmed = scannedValue.trim();
+        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+          try { parsedLocal = JSON.parse(trimmed); } catch { parsedLocal = null; }
+        }
+      }
+
+      const search = (parsedLocal
+        ? String(parsedLocal.codigo_labcontrol || parsedLocal.codigo || parsedLocal.patrimonio_ufpi || parsedLocal.id || '')
+        : String(scannedValue)
+      ).toUpperCase().trim();
+      const searchId = parsedLocal?.id ? Number(parsedLocal.id) : null;
+
       const localMatch = equipamentos.find(
         (e) =>
+          (searchId && Number(e.id || e.id_equipamento) === searchId) ||
           String(e.id || e.id_equipamento) === search ||
           (e.codigo_labcontrol && e.codigo_labcontrol.toUpperCase() === search) ||
           (e.codigo_patrimonio && e.codigo_patrimonio.toUpperCase() === search) ||

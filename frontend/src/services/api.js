@@ -1,11 +1,6 @@
 import axios from 'axios';
 import { handleMockRequest } from './mockData';
 
-export function isExplicitDemoMode() {
-  if (typeof window === 'undefined') return false;
-  return localStorage.getItem('labcontrol_demo_mode') === 'true';
-}
-
 export function isGitHubPagesStatic() {
   if (typeof window === 'undefined') return false;
   return (
@@ -14,8 +9,29 @@ export function isGitHubPagesStatic() {
   ) && !import.meta.env.VITE_API_URL;
 }
 
+export function getOperatingMode() {
+  if (typeof window === 'undefined') return 'demo';
+  const val = localStorage.getItem('labcontrol_operating_mode');
+  if (val === 'cloud' || val === 'demo') return val;
+  if (isGitHubPagesStatic()) return 'demo';
+  if (localStorage.getItem('labcontrol_demo_mode') === 'true') return 'demo';
+  return 'demo'; // Modo seguro por padrão para apresentações infalíveis
+}
+
+export function setOperatingMode(mode) {
+  if (typeof window === 'undefined') return;
+  const safeMode = mode === 'cloud' ? 'cloud' : 'demo';
+  localStorage.setItem('labcontrol_operating_mode', safeMode);
+  localStorage.setItem('labcontrol_demo_mode', safeMode === 'demo' ? 'true' : 'false');
+  window.dispatchEvent(new CustomEvent('labcontrol_mode_changed', { detail: { mode: safeMode } }));
+}
+
+export function isExplicitDemoMode() {
+  return getOperatingMode() === 'demo';
+}
+
 export function shouldUseMock() {
-  return isExplicitDemoMode() || isGitHubPagesStatic();
+  return getOperatingMode() === 'demo';
 }
 
 const api = axios.create({
@@ -94,7 +110,8 @@ api.interceptors.response.use(
       }
     } else if (error.code === 'ERR_NETWORK') {
       // Fornece mensagem compreensível de falha de conexão real
-      error.message = 'Não foi possível conectar ao servidor da API LabControl. Verifique sua conexão ou se o serviço do backend está ativo.';
+      error.message = 'Não foi possível conectar ao servidor da API LabControl. Caso o servidor não esteja ativo, você pode alternar para o Modo Apresentação no topo da tela.';
+      error.isNetworkError = true;
     }
 
     return Promise.reject(error);

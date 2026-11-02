@@ -887,6 +887,81 @@ export default function Dashboard() {
         </section>
       )}
 
+      {/* Serviços e Ações Rápidas para Usuários e Pesquisadores */}
+      {!isAdmin && (
+        <section className="space-y-4" aria-label="Ações do usuário">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-teal-500 animate-pulse"></span>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                SERVIÇOS RÁPIDOS · Operações Acadêmicas
+              </h2>
+            </div>
+            <span className="text-[11px] text-slate-500">
+              Acesso direto para aulas, pesquisas e retiradas
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Link
+              to="/checkin-checkout"
+              className="p-5 rounded-2xl border border-slate-200 bg-white hover:border-teal-500 hover:shadow-md transition group flex flex-col justify-between space-y-3 cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white transition">
+                <QrCode className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">Check-in / Out QR</h3>
+                <p className="text-xs text-slate-500 mt-1">Escaneie o QR Code do equipamento para retirada ou devolução imediata.</p>
+              </div>
+              <span className="text-xs font-semibold text-teal-600 flex items-center gap-1">Acessar leitor →</span>
+            </Link>
+
+            <Link
+              to="/reservas"
+              className="p-5 rounded-2xl border border-slate-200 bg-white hover:border-blue-500 hover:shadow-md transition group flex flex-col justify-between space-y-3 cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition">
+                <CalendarCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">Agendar Laboratório</h3>
+                <p className="text-xs text-slate-500 mt-1">Reserve bancadas, impressoras 3D ou salas de informática para projetos.</p>
+              </div>
+              <span className="text-xs font-semibold text-blue-600 flex items-center gap-1">Fazer agendamento →</span>
+            </Link>
+
+            <Link
+              to="/ocorrencias"
+              className="p-5 rounded-2xl border border-slate-200 bg-white hover:border-amber-500 hover:shadow-md transition group flex flex-col justify-between space-y-3 cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">Reportar Avaria</h3>
+                <p className="text-xs text-slate-500 mt-1">Notifique defeitos, peças danificadas ou necessidade de suporte técnico.</p>
+              </div>
+              <span className="text-xs font-semibold text-amber-600 flex items-center gap-1">Registrar chamado →</span>
+            </Link>
+
+            <Link
+              to="/capacitacoes"
+              className="p-5 rounded-2xl border border-slate-200 bg-white hover:border-purple-500 hover:shadow-md transition group flex flex-col justify-between space-y-3 cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:bg-purple-600 group-hover:text-white transition">
+                <GraduationCap className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">Treinamentos e Cursos</h3>
+                <p className="text-xs text-slate-500 mt-1">Consulte seus certificados de segurança e inscreva-se em oficinas.</p>
+              </div>
+              <span className="text-xs font-semibold text-purple-600 flex items-center gap-1">Ver certificados →</span>
+            </Link>
+          </div>
+        </section>
+      )}
+
       {/* ======================================================== */}
       {/* 4. SEÇÃO AGENDA: PRÓXIMAS RESERVAS E EVENTOS             */}
       {/* ======================================================== */}

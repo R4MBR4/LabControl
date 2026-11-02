@@ -323,7 +323,7 @@ function notifyMockRole(db, role, actorId, notification) {
 
 export function handleMockRequest(method, url, data, requestParams = {}) {
   const db = getStorage();
-  const cleanUrl = url.split('?')[0];
+  const cleanUrl = url.split('?')[0].replace(/^\/api/, '') || '/';
   const currentUser = JSON.parse(localStorage.getItem('labcontrol_user') || 'null');
 
   // Helper para responder simulando Axios
@@ -398,6 +398,44 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
     const storedUser = localStorage.getItem('labcontrol_user');
     const u = storedUser ? JSON.parse(storedUser) : db.usuarios[0];
     return ok(u);
+  }
+
+  if (cleanUrl === '/auth/cadastro' && method.toUpperCase() === 'POST') {
+    const { nome, email, perfil, matricula, departamento } = data || {};
+    if (!nome || !email) {
+      return { data: { error: 'Nome e e-mail institucional são obrigatórios.' }, status: 400, statusText: 'Bad Request' };
+    }
+    const safePerfil = (perfil || 'aluno').toLowerCase() === 'professor' ? 'PROFESSOR' : 'ALUNO';
+    const novoUsuario = {
+      id: Date.now(),
+      nome,
+      email: email.toLowerCase(),
+      perfil: safePerfil,
+      status: 'PENDENTE',
+      email_confirmado: false,
+      matricula: matricula || `MAT-${Math.floor(1000 + Math.random() * 9000)}`,
+      departamento: departamento || 'Departamento Acadêmico'
+    };
+    db.usuarios = db.usuarios || [];
+    db.usuarios.push(novoUsuario);
+    saveStorage(db);
+    return ok({
+      message: 'Cadastro institucional realizado com sucesso! Utilize o código de confirmação para ativar o acesso.',
+      token_simulado: 'DEMO-' + Math.floor(1000 + Math.random() * 9000),
+      usuario: novoUsuario
+    });
+  }
+
+  if (cleanUrl === '/auth/confirmar-email' && method.toUpperCase() === 'POST') {
+    const pendingUser = (db.usuarios || []).find(u => u.status === 'PENDENTE');
+    if (pendingUser) {
+      pendingUser.status = 'ATIVO';
+      pendingUser.email_confirmado = true;
+      saveStorage(db);
+    }
+    return ok({
+      message: 'E-mail confirmado com sucesso! Sua conta está ativada para login.'
+    });
   }
 
   if (cleanUrl === '/busca') {
@@ -870,6 +908,63 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
     }
     const equip = db.equipamentos.find(e => e.id === id);
     return ok(equip || db.equipamentos[0]);
+  }
+
+  if (cleanUrl === '/equipamentos/identificar-qr' && method.toUpperCase() === 'POST') {
+    const rawValue = data?.scanned_value || data?.codigo || '';
+    let parsed = null;
+    if (typeof rawValue === 'object' && rawValue !== null) {
+      parsed = rawValue;
+    } else if (typeof rawValue === 'string') {
+      const trimmed = rawValue.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try { parsed = JSON.parse(trimmed); } catch { parsed = null; }
+      }
+    }
+
+    const term = parsed ? String(parsed.codigo_labcontrol || parsed.codigo || parsed.patrimonio_ufpi || parsed.id || '') : String(rawValue).trim();
+    const parsedId = parsed?.id ? Number(parsed.id) : null;
+
+    const equip = db.equipamentos.find(e => {
+      if (parsedId && Number(e.id) === parsedId) return true;
+      const matchTerm = term.toUpperCase();
+      return String(e.id) === term ||
+        (e.codigo_labcontrol && e.codigo_labcontrol.toUpperCase() === matchTerm) ||
+        (e.codigo_patrimonio && e.codigo_patrimonio.toUpperCase() === matchTerm) ||
+        (e.patrimonio_ufpi && e.patrimonio_ufpi.toUpperCase() === matchTerm);
+    });
+
+    if (!equip) {
+      return { data: { error: 'Nenhum equipamento cadastrado corresponde a esta leitura.' }, status: 404, statusText: 'Not Found' };
+    }
+
+    const isInactive = equip.inativo === 1 || equip.inativo === true || equip.status === 'inativo';
+    const isMaintenance = equip.status === 'manutencao';
+
+    const utilizacaoAtiva = (db.utilizacoes || []).find(u => 
+      Number(u.equipamento_id) === Number(equip.id) && String(u.status || '').toLowerCase() === 'em_uso'
+    );
+
+    let fluxoRecomendado = 'checkin';
+    let motivoBloqueio = null;
+
+    if (isInactive) {
+      fluxoRecomendado = 'bloqueado';
+      motivoBloqueio = 'Equipamento inativado no acervo.';
+    } else if (isMaintenance) {
+      fluxoRecomendado = 'bloqueado';
+      motivoBloqueio = 'Equipamento em manutenção.';
+    } else if (utilizacaoAtiva) {
+      fluxoRecomendado = 'checkout';
+    }
+
+    return ok({
+      equipamento: equip,
+      utilizacaoAtiva: utilizacaoAtiva || null,
+      fluxoRecomendado,
+      motivoBloqueio,
+      podeCheckout: Boolean(utilizacaoAtiva)
+    });
   }
 
   // 5. RESERVAS
@@ -1445,6 +1540,13 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
     }
     return ok(db.capacitacoes);
   }
+  if (cleanUrl.match(/\/capacitacoes\/\d+/) && method.toUpperCase() === 'DELETE') {
+    const id = Number(cleanUrl.split('/')[2]);
+    db.capacitacoes = (db.capacitacoes || []).filter(c => c.id !== id);
+    saveStorage(db);
+    return ok({ message: 'Capacitação removida com sucesso' });
+  }
+
   if (cleanUrl.match(/\/capacitacoes\/\d+\/inscrever/)) {
     const id = Number(cleanUrl.split('/')[2]);
     const item = db.capacitacoes.find(c => c.id === id);
@@ -1474,6 +1576,15 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
   }
   if (cleanUrl.startsWith('/usuarios/')) {
     const id = Number(cleanUrl.split('/')[2]);
+    if (method.toUpperCase() === 'DELETE') {
+      const idx = db.usuarios.findIndex(u => u.id === id);
+      if (idx !== -1) {
+        db.usuarios[idx].status = 'INATIVO';
+        saveStorage(db);
+        return ok({ message: 'Usuário inativado com sucesso para preservação histórica' });
+      }
+      return { data: { error: 'Usuário não encontrado' }, status: 404, statusText: 'Not Found' };
+    }
     if (method.toUpperCase() === 'PUT') {
       const idx = db.usuarios.findIndex(u => u.id === id);
       if (idx !== -1) {
@@ -1521,13 +1632,28 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
     const inv = (db.inventarios || []).find(i => i.id === invId);
     if (!inv) return { data: { error: 'Inventário não encontrado' }, status: 404 };
 
-    const term = String(data.scanned_value).trim();
-    const equip = db.equipamentos.find(e => 
-      String(e.id) === term ||
-      (e.codigo_patrimonio && e.codigo_patrimonio.toUpperCase() === term.toUpperCase()) ||
-      (e.patrimonio_ufpi && e.patrimonio_ufpi.toUpperCase() === term.toUpperCase()) ||
-      (e.codigo_labcontrol && e.codigo_labcontrol.toUpperCase() === term.toUpperCase())
-    );
+    const rawValue = data.scanned_value || data.codigo || '';
+    let parsed = null;
+    if (typeof rawValue === 'object' && rawValue !== null) {
+      parsed = rawValue;
+    } else if (typeof rawValue === 'string') {
+      const trimmed = rawValue.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try { parsed = JSON.parse(trimmed); } catch { parsed = null; }
+      }
+    }
+
+    const term = parsed ? String(parsed.codigo_labcontrol || parsed.codigo || parsed.patrimonio_ufpi || parsed.id || '') : String(rawValue).trim();
+    const parsedId = parsed?.id ? Number(parsed.id) : null;
+
+    const equip = db.equipamentos.find(e => {
+      if (parsedId && Number(e.id) === parsedId) return true;
+      const matchTerm = term.toUpperCase();
+      return String(e.id) === term ||
+        (e.codigo_labcontrol && e.codigo_labcontrol.toUpperCase() === matchTerm) ||
+        (e.codigo_patrimonio && e.codigo_patrimonio.toUpperCase() === matchTerm) ||
+        (e.patrimonio_ufpi && e.patrimonio_ufpi.toUpperCase() === matchTerm);
+    });
 
     if (!equip) {
       return { data: { error: `Equipamento "${term}" não foi encontrado no cadastro.` }, status: 400 };

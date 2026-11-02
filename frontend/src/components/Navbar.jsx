@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -21,11 +21,14 @@ import {
   FileBarChart2,
   Search,
   Moon,
-  Sun
+  Sun,
+  Database,
+  Sparkles
 } from 'lucide-react';
 import BuscaGlobal from './BuscaGlobal';
 import Notificacoes from './Notificacoes';
 import { useTheme } from '../context/ThemeContext';
+import { getOperatingMode, setOperatingMode } from '../services/api';
 
 export default function Navbar() {
   const { user, isAdmin, logout } = useAuth();
@@ -34,6 +37,19 @@ export default function Navbar() {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [opMode, setOpMode] = useState(getOperatingMode());
+
+  useEffect(() => {
+    const handler = (e) => setOpMode(e.detail?.mode || getOperatingMode());
+    window.addEventListener('labcontrol_mode_changed', handler);
+    return () => window.removeEventListener('labcontrol_mode_changed', handler);
+  }, []);
+
+  const toggleOpMode = () => {
+    const next = opMode === 'demo' ? 'cloud' : 'demo';
+    setOperatingMode(next);
+    setOpMode(next);
+  };
 
   const handleLogout = () => {
     logout();
@@ -102,6 +118,21 @@ export default function Navbar() {
             </div>
           </div>
 
+          {/* Seletor de Modo Operacional (Demo vs TiDB Cloud) */}
+          <button
+            type="button"
+            onClick={toggleOpMode}
+            title={opMode === 'demo' ? 'Modo Apresentação ativo (Dados Locais). Clique para alternar para Nuvem TiDB.' : 'Conectado à API Nuvem TiDB. Clique para alternar para Modo Apresentação.'}
+            className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition cursor-pointer shrink-0 ${
+              opMode === 'demo'
+                ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
+                : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${opMode === 'demo' ? 'bg-purple-600 animate-pulse' : 'bg-emerald-500'}`} />
+            <span>{opMode === 'demo' ? 'Modo Apresentação' : 'TiDB Nuvem'}</span>
+          </button>
+
           <Notificacoes />
           <button
             type="button"
@@ -113,7 +144,7 @@ export default function Navbar() {
             {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
 
-          {/* Lado Direito Desktop: Perfil do Usuário e Botão Sair com Ícone (como antes) */}
+          {/* Lado Direito Desktop: Perfil do Usuário e Botão Sair com Ícone */}
           <div className="hidden lg:flex items-center gap-1.5 shrink-0 pl-2 border-l border-slate-200">
             <button
               type="button"
@@ -136,7 +167,7 @@ export default function Navbar() {
               </span>
             </div>
 
-            {/* Botão de Sair com ícone direto à mostra sem rolagem lateral */}
+            {/* Botão de Sair */}
             <button
               onClick={handleLogout}
               title="Sair do sistema"
@@ -203,6 +234,22 @@ export default function Navbar() {
             >
               <LogOut className="w-3.5 h-3.5" />
               Sair
+            </button>
+          </div>
+
+          {/* Toggle de Modo no Mobile */}
+          <div className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200">
+            <span className="text-xs font-semibold text-slate-700">Modo de Apresentação:</span>
+            <button
+              type="button"
+              onClick={toggleOpMode}
+              className={`px-3 py-1 rounded-full text-xs font-bold transition ${
+                opMode === 'demo'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'bg-emerald-600 text-white shadow-xs'
+              }`}
+            >
+              {opMode === 'demo' ? '🟣 Apresentação (Demo)' : '🟢 TiDB Nuvem'}
             </button>
           </div>
 
