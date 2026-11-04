@@ -230,9 +230,10 @@ export default function Reservas() {
     try {
       if (isRecorrente) {
         // Bloco 08: Criação de série recorrente com verificação em todas as ocorrências
+        const selectedEquip = tipoRecurso === "equipamento" ? equipamentos.find(e => Number(e.id || e.id_equipamento) === Number(formData.equipamento_id)) : null;
         const payload = {
-          equipamento_id: tipoRecurso === 'equipamento' ? formData.equipamento_id : null,
-          espaco_id: tipoRecurso === 'espaco' ? formData.espaco_id : null,
+          equipamento_id: tipoRecurso === 'equipamento' ? (formData.equipamento_id ? Number(formData.equipamento_id) : null) : null,
+          espaco_id: tipoRecurso === 'espaco' ? (formData.espaco_id ? Number(formData.espaco_id) : null) : (selectedEquip?.espaco_id ? Number(selectedEquip.espaco_id) : null),
           finalidade: formData.finalidade,
           observacoes: formData.observacoes,
           dias_semana: diasSemana,
@@ -247,13 +248,14 @@ export default function Reservas() {
         setSuccess(`Série recorrente criada com sucesso! ${res.data.totalCriadas} ocorrências confirmadas sem conflitos.`);
       } else {
         // Reserva simples (Bloco 07)
+        const selectedEquip = tipoRecurso === "equipamento" ? equipamentos.find(e => Number(e.id || e.id_equipamento) === Number(formData.equipamento_id)) : null;
         const payload = {
           data_inicio: formData.data_inicio,
           data_fim: formData.data_fim,
           finalidade: formData.finalidade,
           observacoes: formData.observacoes,
-          equipamento_id: tipoRecurso === 'equipamento' ? formData.equipamento_id : null,
-          espaco_id: tipoRecurso === 'espaco' ? formData.espaco_id : null
+          equipamento_id: tipoRecurso === 'equipamento' ? (formData.equipamento_id ? Number(formData.equipamento_id) : null) : null,
+          espaco_id: tipoRecurso === 'espaco' ? (formData.espaco_id ? Number(formData.espaco_id) : null) : (selectedEquip?.espaco_id ? Number(selectedEquip.espaco_id) : null)
         };
 
         await api.post('/reservas', payload);

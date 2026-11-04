@@ -806,9 +806,9 @@ export default function Equipamentos() {
 
       {/* Modal Criar / Editar Equipamento Completo */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 my-8">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between p-6 pb-4 border-b border-slate-100 shrink-0">
               <h3 className="font-bold text-slate-800 text-base">
                 {editingEquip ? 'Editar Equipamento' : 'Cadastrar Novo Equipamento'}
               </h3>
@@ -823,7 +823,7 @@ export default function Equipamentos() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 pt-4 overflow-y-auto space-y-4 flex-1">
               {/* Identificadores Oficiais */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -1083,7 +1083,7 @@ export default function Equipamentos() {
               </div>
 
               {/* Botões de Submissão */}
-              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100 shrink-0 bg-white">
                 <button
                   type="button"
                   onClick={handleCloseModal}

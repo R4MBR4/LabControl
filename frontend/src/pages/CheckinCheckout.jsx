@@ -212,7 +212,7 @@ export default function CheckinCheckout() {
 
       setMessage({
         type: 'success',
-        text: `Check-in realizado com sucesso para o equipamento! Status atualizado para "em_uso".`
+        text: `Check-in realizado com sucesso! Equipamento "${res.data.utilizacao?.equipamento_nome || identifiedEquip?.nome || 'Equipamento'}" retirado. Status atualizado e sincronizado para "em_uso".`
       });
       setCheckinObs('');
       handleClearIdentified();
@@ -405,7 +405,18 @@ export default function CheckinCheckout() {
                   <div className="flex items-center gap-2.5">
                     <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
                     <div>
-                      <h4 className="font-bold text-slate-900 text-xs">{identifiedEquip.nome}</h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-slate-900 text-xs">{identifiedEquip.nome}</h4>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                          (identifiedEquip.status || 'disponivel').toLowerCase() === 'disponivel'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : (identifiedEquip.status || '').toLowerCase() === 'em_uso'
+                            ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                            : 'bg-rose-100 text-rose-800 border border-rose-300'
+                        }`}>
+                          {identifiedEquip.status || 'disponivel'}
+                        </span>
+                      </div>
                       <p className="text-[11px] text-teal-800">
                         Identificado via QR: <span className="font-mono font-bold">{identifiedEquip.codigo_labcontrol || identifiedEquip.codigo_patrimonio}</span>
                       </p>

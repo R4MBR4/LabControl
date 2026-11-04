@@ -24,7 +24,8 @@ import {
   RefreshCw,
   Tv,
   ChevronRight,
-  UserCheck
+  UserCheck,
+  GraduationCap
 } from 'lucide-react';
 
 function formatDayMonth(value) {

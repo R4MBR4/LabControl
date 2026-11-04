@@ -38,7 +38,7 @@ async function getEspacoDetalhes(id) {
   const [equipamentos] = await pool.query(`
     SELECT e.*
     FROM equipamento e
-    WHERE e.espaco_id = ? AND (e.inativo = 0 OR e.inativo IS NULL)
+    WHERE e.espaco_id = ?
     ORDER BY e.nome ASC
   `, [id]);
 

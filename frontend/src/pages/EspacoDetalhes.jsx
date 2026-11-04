@@ -31,6 +31,7 @@ export default function EspacoDetalhes() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('equipamentos');
+  const [equipFilter, setEquipFilter] = useState('ativos'); // 'ativos', 'inativos', 'todos'
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [error, setError] = useState('');
 
@@ -71,6 +72,12 @@ export default function EspacoDetalhes() {
   }
 
   const { espaco, equipamentos, reservas, utilizacaoAtual, inventarios } = data;
+  const filteredEquipamentos = (equipamentos || []).filter((eq) => {
+    const isInactive = eq.inativo === 1 || eq.inativo === true || (eq.status || '').toLowerCase() === 'inativo';
+    if (equipFilter === 'ativos' && isInactive) return false;
+    if (equipFilter === 'inativos' && !isInactive) return false;
+    return true;
+  });
   const emUso = utilizacaoAtual?.reservaEmAndamento || (utilizacaoAtual?.equipamentosEmUso?.length > 0);
 
   return (
@@ -263,18 +270,49 @@ export default function EspacoDetalhes() {
         {/* Aba 1: Equipamentos */}
         {activeTab === 'equipamentos' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-800">Equipamentos Pertencentes ao Laboratório</h3>
-              <span className="text-xs text-slate-400">Total: {equipamentos?.length || 0}</span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">Equipamentos Pertencentes ao Laboratório</h3>
+                <span className="text-xs text-slate-400">Total cadastrado: {equipamentos?.length || 0}</span>
+              </div>
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600 border border-slate-200 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setEquipFilter('ativos')}
+                  className={`px-3 py-1 rounded-lg transition ${
+                    equipFilter === 'ativos' ? 'bg-white text-teal-700 shadow-xs font-bold' : 'hover:text-slate-900'
+                  }`}
+                >
+                  Ativos ({(equipamentos || []).filter(e => !(e.inativo === 1 || e.inativo === true || (e.status || '').toLowerCase() === 'inativo')).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEquipFilter('inativos')}
+                  className={`px-3 py-1 rounded-lg transition ${
+                    equipFilter === 'inativos' ? 'bg-white text-rose-700 shadow-xs font-bold' : 'hover:text-slate-900'
+                  }`}
+                >
+                  Inativos ({(equipamentos || []).filter(e => e.inativo === 1 || e.inativo === true || (e.status || '').toLowerCase() === 'inativo').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEquipFilter('todos')}
+                  className={`px-3 py-1 rounded-lg transition ${
+                    equipFilter === 'todos' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'hover:text-slate-900'
+                  }`}
+                >
+                  Todos ({equipamentos?.length || 0})
+                </button>
+              </div>
             </div>
 
-            {equipamentos?.length === 0 ? (
+            {filteredEquipamentos.length === 0 ? (
               <p className="text-center py-8 text-xs text-slate-400">
-                Nenhum equipamento cadastrado neste laboratório.
+                Nenhum equipamento encontrado para o filtro selecionado ({equipFilter}).
               </p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {equipamentos.map((eq) => {
+                {filteredEquipamentos.map((eq) => {
                   const status = (eq.status || 'disponivel').toLowerCase();
                   return (
                     <div

@@ -437,6 +437,13 @@ async function identificarQR(req, res) {
     // Verifica utilização ativa no banco de dados
     const utilizacaoModel = require('../models/utilizacaoModel');
     const utilizacaoAtiva = await utilizacaoModel.getActiveUtilizacaoByEquipamento(equipId);
+    if (utilizacaoAtiva) {
+      equip.status = 'em_uso';
+      equip.status_operacional = 'em_uso';
+    } else if (!isInactive && !isManutencao && status === 'em_uso') {
+      equip.status = 'disponivel';
+      equip.status_operacional = 'disponivel';
+    }
 
     // Validação de capacitação técnica obrigatória
     const capacitacaoModel = require('../models/capacitacaoModel');

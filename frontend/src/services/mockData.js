@@ -752,7 +752,7 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
 
     if (cleanUrl.match(/\/espacos\/\d+\/detalhes/)) {
       const esp = db.espacos.find(e => e.id === id) || db.espacos[0];
-      const equipamentos = db.equipamentos.filter(e => e.espaco_id === id && !e.inativo);
+      const equipamentos = db.equipamentos.filter(e => e.espaco_id === id);
       const reservas = db.reservas.filter(r => r.espaco_id === id);
       const utilizacoes = db.utilizacoes.filter(u => equipamentos.some(eq => eq.id === u.equipamento_id) && u.status === 'EM_USO');
       const reservaAtual = reservas.find(r => r.status === 'em_andamento') || null;
@@ -1033,22 +1033,86 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
   // 5. RESERVAS
   if (cleanUrl === '/reservas') {
     if (method.toUpperCase() === 'POST') {
-      const esp = db.espacos.find(s => s.id === Number(data.espaco_id));
-      const eq = data.equipamento_id ? db.equipamentos.find(e => e.id === Number(data.equipamento_id)) : null;
+      const targetEquipId = data.equipamento_id ? Number(data.equipamento_id) : null;
+      const eq = targetEquipId ? db.equipamentos.find(e => e.id === targetEquipId) : null;
+      const targetEspacoId = Number(data.espaco_id) || (eq ? eq.espaco_id : null);
+      const esp = db.espacos.find(s => s.id === targetEspacoId);
       const storedUser = localStorage.getItem('labcontrol_user');
       const u = storedUser ? JSON.parse(storedUser) : db.usuarios[0];
+
+      if (!data.data_inicio || !data.data_fim) {
+        return { data: { error: 'Data de início e término são obrigatórias.' }, status: 400, statusText: 'Bad Request' };
+      }
+      if (new Date(data.data_inicio) >= new Date(data.data_fim)) {
+        return { data: { error: 'A data de início deve ser anterior à data de término.' }, status: 400, statusText: 'Bad Request' };
+      }
+      if (!targetEquipId && !targetEspacoId) {
+        return { data: { error: 'Informe ao menos um equipamento ou espaço para reservar.' }, status: 400, statusText: 'Bad Request' };
+      }
+
+      if (eq) {
+        const eqStatus = (eq.status || '').toLowerCase();
+        if (eq.inativo === 1 || eq.inativo === true || eqStatus === 'inativo') {
+          return { data: { error: 'Equipamento inativo não pode receber reservas.' }, status: 400, statusText: 'Bad Request' };
+        }
+        if (eqStatus === 'manutencao' || eqStatus === 'em_manutencao') {
+          return { data: { error: 'Equipamento em manutenção não pode ser reservado.' }, status: 400, statusText: 'Bad Request' };
+        }
+      }
+
+      // Prevenção de conflito
+      const startReq = new Date(data.data_inicio).getTime();
+      const endReq = new Date(data.data_fim).getTime();
+      const conflitos = (db.reservas || []).filter(r => {
+        if (['cancelada', 'cancelado'].includes(String(r.status || '').toLowerCase())) return false;
+        const rStart = new Date(r.data_inicio).getTime();
+        const rEnd = new Date(r.data_fim).getTime();
+        const overlap = (rStart < endReq) && (rEnd > startReq);
+        if (!overlap) return false;
+
+        if (targetEquipId && targetEspacoId) {
+          return Number(r.equipamento_id) === targetEquipId || (Number(r.espaco_id) === targetEspacoId && !r.equipamento_id);
+        } else if (targetEquipId) {
+          return Number(r.equipamento_id) === targetEquipId;
+        } else if (targetEspacoId) {
+          return Number(r.espaco_id) === targetEspacoId;
+        }
+        return false;
+      });
+
+      if (conflitos.length > 0) {
+        const c = conflitos[0];
+        const recNome = c.equipamento_nome || c.espaco_nome || 'o recurso selecionado';
+        return {
+          data: {
+            error: `Conflito de horário detectado: já existe uma reserva ativa para ${recNome}.`,
+            conflito: c,
+            sugestoes: {
+              proximos_horarios: [
+                {
+                  data_inicio: new Date(endReq + 30 * 60000).toISOString().slice(0, 16),
+                  data_fim: new Date(endReq + (endReq - startReq) + 30 * 60000).toISOString().slice(0, 16)
+                }
+              ]
+            }
+          },
+          status: 409,
+          statusText: 'Conflict'
+        };
+      }
 
       const nova = {
         id: Date.now(),
         usuario_id: u.id,
         usuario_nome: u.nome,
-        espaco_id: Number(data.espaco_id) || (esp ? esp.id : null),
-        espaco_nome: esp ? esp.nome : 'Espaço Reservado',
-        equipamento_id: data.equipamento_id ? Number(data.equipamento_id) : null,
+        espaco_id: targetEspacoId || null,
+        espaco_nome: esp ? esp.nome : (targetEspacoId ? `Espaço #${targetEspacoId}` : 'Geral'),
+        equipamento_id: targetEquipId,
         equipamento_nome: eq ? eq.nome : null,
         data_inicio: data.data_inicio,
         data_fim: data.data_fim,
         finalidade: data.finalidade || 'Uso acadêmico',
+        observacoes: data.observacoes || '',
         status: 'confirmada'
       };
       db.reservas.unshift(nova);
