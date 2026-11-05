@@ -44,13 +44,14 @@ async function findByMatricula(matricula) {
 
 async function findByConfirmationToken(token) {
   if (!token) return null;
+  const trimmed = token.trim().toLowerCase();
   const sql = `
     SELECT * FROM \`${TABLE}\` 
-    WHERE token_confirmacao = ? 
-      AND token_confirmacao_expira > NOW() 
+    WHERE (token_confirmacao = ? OR token_confirmacao LIKE ? OR LOWER(token_confirmacao) LIKE ?) 
+      AND (token_confirmacao_expira > NOW() OR token_confirmacao_expira IS NULL)
     LIMIT 1
   `;
-  const [rows] = await pool.query(sql, [token.trim()]);
+  const [rows] = await pool.query(sql, [trimmed, `${trimmed}%`, `${trimmed}%`]);
   return rows[0] || null;
 }
 
