@@ -34,12 +34,18 @@ export function shouldUseMock() {
   return getOperatingMode() === 'demo';
 }
 
+const CLOUD_API_URL = import.meta.env.VITE_API_URL || (
+  typeof window !== 'undefined' && window.location.hostname.includes('github.io')
+    ? 'https://labcontrol-api.onrender.com/api'
+    : '/api'
+);
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: CLOUD_API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000
+  timeout: 15000
 });
 
 // Interceptor de requisição: injeta token e executa mock APENAS se estiver em modo demo/mock explícito

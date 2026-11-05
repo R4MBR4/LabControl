@@ -1,0 +1,11 @@
+{
+  "name": "labcontrol",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LabControl - Gestão e Rastreabilidade de Laboratórios",
+  "scripts": {
+    "build": "cd backend && npm install",
+    "start": "cd backend && node server.js",
+    "postinstall": "cd backend && npm install"
+  }
+}
