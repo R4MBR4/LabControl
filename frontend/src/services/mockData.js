@@ -432,7 +432,7 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
   if (cleanUrl === '/auth/cadastro' && method.toUpperCase() === 'POST') {
     const { nome, email, perfil, matricula, departamento, senha, confirmacaoSenha, confirmacao_senha } = data || {};
     if (!nome || !email) {
-      return { data: { error: 'Nome e e-mail institucional são obrigatórios.' }, status: 400, statusText: 'Bad Request' };
+      return { data: { error: 'Nome e e-mail são obrigatórios.' }, status: 400, statusText: 'Bad Request' };
     }
 
     const confSenha = confirmacaoSenha || confirmacao_senha;
@@ -441,10 +441,9 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
     }
 
     const emailLower = String(email).trim().toLowerCase();
-    const isInstitutional = /@(?:[a-zA-Z0-9-]+.)*(?:ufpi\.edu\.br|aluno\.ufpi\.edu\.br|ufpi\.br|labcontrol\.com|edu\.br)$/i.test(emailLower);
-    if (!isInstitutional) {
+    if (!emailLower.includes('@') || emailLower.length < 5) {
       return {
-        data: { error: 'O e-mail deve ser um endereço institucional válido (ex: @ufpi.edu.br, @aluno.ufpi.edu.br ou @ufpi.br). Domínios públicos como @gmail.com não são permitidos.' },
+        data: { error: 'Informe um endereço de e-mail válido (ex: seuemail@gmail.com ou institucional).' },
         status: 400,
         statusText: 'Bad Request'
       };
@@ -453,39 +452,45 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
     const safePerfil = (perfil || 'aluno').toLowerCase() === 'professor' ? 'PROFESSOR' : 'ALUNO';
     const codigoConfirmacao = 'DEMO-' + Math.floor(1000 + Math.random() * 9000);
 
-    const novoUsuario = {
+    db.usuarios = db.usuarios || [];
+    let usuarioExistente = db.usuarios.find(u => (u.email || '').toLowerCase() === emailLower);
+
+    const usuarioSalvo = usuarioExistente || {
       id: Date.now(),
-      nome,
-      email: emailLower,
-      senha: senha || 'aluno123',
-      perfil: safePerfil,
-      status: 'PENDENTE',
-      email_confirmado: false,
-      token_confirmacao: codigoConfirmacao,
-      matricula: matricula || `MAT-${Math.floor(1000 + Math.random() * 9000)}`,
-      departamento: departamento || 'Departamento Acadêmico'
+      email: emailLower
     };
 
-    db.usuarios = db.usuarios || [];
-    db.usuarios.push(novoUsuario);
+    usuarioSalvo.nome = String(nome).trim();
+    usuarioSalvo.email = emailLower;
+    usuarioSalvo.senha = senha || 'aluno123';
+    usuarioSalvo.perfil = safePerfil;
+    usuarioSalvo.status = 'ATIVO'; // Ativação direta para testes fluidos
+    usuarioSalvo.email_confirmado = true;
+    usuarioSalvo.token_confirmacao = codigoConfirmacao;
+    usuarioSalvo.matricula = matricula ? String(matricula).trim() : `MAT-${Math.floor(1000 + Math.random() * 9000)}`;
+    usuarioSalvo.departamento = departamento ? String(departamento).trim() : 'Departamento Acadêmico';
+
+    if (!usuarioExistente) {
+      db.usuarios.push(usuarioSalvo);
+    }
     saveStorage(db);
+
     return ok({
-      message: 'Cadastro institucional realizado com sucesso! Utilize o código de confirmação abaixo para ativar seu acesso.',
+      message: 'Cadastro realizado com sucesso! Sua conta já está ativada para testes e login imediato.',
       token_simulado: codigoConfirmacao,
-      usuario: novoUsuario
+      usuario: usuarioSalvo
     });
   }
 
   if (cleanUrl === '/auth/confirmar-email' && method.toUpperCase() === 'POST') {
     const token = (data?.token || '').trim();
     db.usuarios = db.usuarios || [];
-    const pendingUser = db.usuarios.find(u =>
-      (u.status === 'PENDENTE' || u.email_confirmado === false) &&
-      (!token || u.token_confirmacao === token || (token.startsWith('DEMO-') && String(u.token_confirmacao || '').startsWith('DEMO-')) || token === '123456')
-    );
-    if (pendingUser) {
-      pendingUser.status = 'ATIVO';
-      pendingUser.email_confirmado = true;
+    const targetUser = db.usuarios.find(u =>
+      !token || u.token_confirmacao === token || (token.startsWith('DEMO-') && String(u.token_confirmacao || '').startsWith('DEMO-')) || token === '123456'
+    ) || db.usuarios[db.usuarios.length - 1];
+    if (targetUser) {
+      targetUser.status = 'ATIVO';
+      targetUser.email_confirmado = true;
       saveStorage(db);
       return ok({
         message: 'E-mail confirmado com sucesso! Sua conta está ativada para login.'

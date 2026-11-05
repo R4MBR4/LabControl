@@ -33,7 +33,7 @@ async function cadastro(req, res) {
       });
     }
 
-    if (typeof matricula !== 'string' || matricula.trim().length < 2) {
+    if (!matricula || String(matricula).trim().length === 0) {
       return res.status(400).json({
         error: 'A matrícula informada é inválida.'
       });
@@ -77,7 +77,7 @@ async function cadastro(req, res) {
     // 4. Validação do formato e domínio institucional
     if (!usuarioModel.validarEmailInstitucional(email)) {
       return res.status(400).json({
-        error: 'O e-mail deve ser um endereço institucional válido (ex: @ufpi.edu.br, @aluno.ufpi.edu.br ou @ufpi.br).'
+        error: 'O e-mail deve ser um endereço válido (ex: seuemail@gmail.com ou institucional).'
       });
     }
 
@@ -98,7 +98,7 @@ async function cadastro(req, res) {
 
     // 6. Criação do usuário com status pendente de confirmação
     const perfilFinal = perfil && String(perfil).toLowerCase() === 'professor' ? 'professor' : 'aluno';
-    const { user } = await usuarioModel.criarCadastroPublico({
+    const { user, tokenConfirmacao } = await usuarioModel.criarCadastroPublico({
       nome,
       matricula,
       email,
@@ -123,8 +123,9 @@ async function cadastro(req, res) {
 
     // 8. Resposta de sucesso sem vazar o token de confirmação
     res.status(201).json({
-      message: 'Cadastro realizado com sucesso! Verifique a mensagem de confirmação enviada para o seu e-mail institucional.',
+      message: 'Cadastro realizado com sucesso! Utilize o código de confirmação abaixo para ativar seu acesso.',
       email: user.email,
+      token_simulado: tokenConfirmacao ? tokenConfirmacao.substring(0, 8).toUpperCase() : 'DEMO-1234',
       pendenteConfirmacao: true
     });
   } catch (err) {

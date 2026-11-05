@@ -88,12 +88,12 @@ async function runSuite() {
   let tokenAluno = '';
   let idAlunoCriado = null;
 
-  await test('Auth', 'Rejeita cadastro público com e-mail não institucional (@gmail.com)', async () => {
+  await test('Auth', 'Aceita cadastro público com qualquer e-mail (@gmail.com) e matrícula livre para testes', async () => {
     const req = {
       body: {
         nome: 'Teste Externo',
         matricula: `EXT-${rand}`,
-        email: 'teste@gmail.com',
+        email: `teste_${rand}@gmail.com`,
         senha: 'senhaSegura123',
         confirmacaoSenha: 'senhaSegura123',
         perfil: 'aluno'
@@ -101,8 +101,7 @@ async function runSuite() {
     };
     const res = createMockRes();
     await authController.cadastro(req, res);
-    assert.equal(res.statusCode, 400);
-    assert.match(res.data.error, /institucional/i);
+    assert.equal(res.statusCode, 201);
   });
 
   await test('Auth', 'Impede elevação de privilégio: não permite perfil administrador no cadastro público', async () => {

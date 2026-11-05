@@ -94,13 +94,13 @@ async function runTests() {
     assert.ok(res.data.error, 'Deveria retornar mensagem de erro');
   });
 
-  // 3. E-mail Inválido: Domínio não institucional
-  await test('E-mail Inválido: Rejeita e-mails externos não institucionais (@gmail.com)', async () => {
+  // 3. E-mail Inválido: Formato incorreto
+  await test('E-mail Inválido: Rejeita e-mails com formato inválido', async () => {
     const req = {
       body: {
-        nome: 'Tentativa Externa',
+        nome: 'Tentativa Invalida',
         matricula: `EXT-${randSuffix}`,
-        email: 'usuario.externo@gmail.com',
+        email: 'email_sem_arroba_invalido',
         senha: 'senhaSegura123',
         confirmacaoSenha: 'senhaSegura123'
       }
@@ -108,8 +108,7 @@ async function runTests() {
     const res = createMockRes();
 
     await authController.cadastro(req, res);
-    assert.equal(res.statusCode, 400, 'Deveria retornar 400 para e-mail não institucional');
-    assert.match(res.data.error, /institucional/i);
+    assert.equal(res.statusCode, 400, 'Deveria retornar 400 para e-mail com formato inválido');
   });
 
   // 4. Matrícula Duplicada

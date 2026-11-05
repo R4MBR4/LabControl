@@ -140,7 +140,14 @@ export default function Login() {
       // Move para confirmação
       setMode('confirmar');
     } catch (err) {
-      setError(err.response?.data?.error || 'Erro ao processar cadastro institucional.');
+      const serverErr = err.response?.data?.error;
+      const netMsg = (err.isNetworkError || err.code === 'ERR_NETWORK' || !err.response)
+        ? 'Servidor em Nuvem desconectado. Para testar sem precisar iniciar o backend no terminal, clique em "Ativar Modo Apresentação" no topo da tela.'
+        : null;
+      setError(serverErr || netMsg || err.message || 'Erro ao processar cadastro institucional.');
+      if (err.isNetworkError || err.code === 'ERR_NETWORK' || !err.response) {
+        setIsNetErr(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -393,9 +400,8 @@ export default function Login() {
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <div>
                   <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">
-                    Novo Cadastro Institucional
-                  </h2>
-                  <p className="text-[11px] text-slate-500">Exclusivo para discentes e docentes da UFPI</p>
+                    Novo Cadastro de Usuário</h2>
+                  <p className="text-[11px] text-slate-500">Aceita qualquer e-mail e matrícula para testes</p>
                 </div>
                 <button
                   type="button"
@@ -434,7 +440,7 @@ export default function Login() {
                       required
                       value={cadastroData.matricula}
                       onChange={(e) => setCadastroData({ ...cadastroData, matricula: e.target.value })}
-                      placeholder="202610100"
+                      placeholder="Qualquer matrícula (ex: 2121113)"
                       className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                     />
                   </div>
@@ -456,7 +462,7 @@ export default function Login() {
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">
-                    E-mail Institucional <span className="text-rose-500">*</span>
+                    E-mail de Acesso <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -465,12 +471,12 @@ export default function Login() {
                       required
                       value={cadastroData.email}
                       onChange={(e) => setCadastroData({ ...cadastroData, email: e.target.value })}
-                      placeholder="nome@ufpi.edu.br ou @aluno.ufpi.edu.br"
+                      placeholder="ex: seuemail@gmail.com ou institucional"
                       className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                     />
                   </div>
                   <span className="text-[10px] text-slate-400 mt-0.5 block">
-                    Deve pertencer a um domínio institucional aprovado da UFPI.
+                    Qualquer endereço de e-mail é aceito para testes de homologação.
                   </span>
                 </div>
 
