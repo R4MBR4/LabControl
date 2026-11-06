@@ -276,6 +276,34 @@ function getStorage() {
     }
     if (!Array.isArray(data.auditoria_eventos)) data.auditoria_eventos = [];
     if (!Array.isArray(data.consumivel_movimentacoes)) data.consumivel_movimentacoes = [];
+
+    // Cura e normalização automática de utilizações e status dos equipamentos
+    if (Array.isArray(data.utilizacoes)) {
+      data.utilizacoes.forEach((u) => {
+        const statusLower = String(u.status || '').toLowerCase();
+        const isFin = ['finalizado', 'concluida', 'concluido'].includes(statusLower);
+        u.data_checkin = u.data_checkin || u.data_inicio || new Date().toISOString();
+        u.data_inicio = u.data_inicio || u.data_checkin;
+        if (isFin) {
+          u.status = 'finalizado';
+          u.data_checkout = u.data_checkout || u.data_fim || u.data_inicio;
+          u.data_fim = u.data_fim || u.data_checkout;
+        }
+      });
+    }
+
+    if (Array.isArray(data.equipamentos) && Array.isArray(data.utilizacoes)) {
+      data.equipamentos.forEach((eq) => {
+        const hasActive = data.utilizacoes.some(
+          (u) => Number(u.equipamento_id) === Number(eq.id) && String(u.status || '').toLowerCase() === 'em_uso'
+        );
+        if (!hasActive && String(eq.status || '').toLowerCase() === 'em_uso') {
+          eq.status = 'disponivel';
+          eq.status_operacional = 'disponivel';
+        }
+      });
+    }
+
     return data;
   } catch (e) {
     return initialData;
@@ -756,19 +784,30 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
     }
 
     if (cleanUrl.match(/\/espacos\/\d+\/detalhes/)) {
-      const esp = db.espacos.find(e => e.id === id) || db.espacos[0];
-      const equipamentos = db.equipamentos.filter(e => e.espaco_id === id);
-      const reservas = db.reservas.filter(r => r.espaco_id === id);
-      const utilizacoes = db.utilizacoes.filter(u => equipamentos.some(eq => eq.id === u.equipamento_id) && u.status === 'EM_USO');
-      const reservaAtual = reservas.find(r => r.status === 'em_andamento') || null;
-      const inventarios = (db.inventarios || []).filter(inv => inv.espaco_id === id);
+      const esp = db.espacos.find(e => Number(e.id) === Number(id)) || db.espacos[0];
+      const equipamentos = (db.equipamentos || []).filter(e => Number(e.espaco_id) === Number(id));
+      const reservas = (db.reservas || []).filter(r => Number(r.espaco_id) === Number(id));
+      const equipIds = new Set(equipamentos.map(e => Number(e.id)));
+      const utilizacoes = (db.utilizacoes || [])
+        .filter(u => equipIds.has(Number(u.equipamento_id)))
+        .map(u => ({
+          ...u,
+          data_checkin: u.data_checkin || u.data_inicio,
+          data_inicio: u.data_inicio || u.data_checkin,
+          data_checkout: u.data_checkout || u.data_fim,
+          data_fim: u.data_fim || u.data_checkout
+        }));
+      const utilizacoesAtivas = utilizacoes.filter(u => String(u.status || '').toLowerCase() === 'em_uso');
+      const reservaAtual = reservas.find(r => ['em_andamento', 'confirmada'].includes(String(r.status || '').toLowerCase())) || null;
+      const inventarios = (db.inventarios || []).filter(inv => Number(inv.espaco_id) === Number(id));
       return ok({
         espaco: esp,
         equipamentos,
         reservas,
+        utilizacoes,
         utilizacaoAtual: {
           reservaEmAndamento: reservaAtual,
-          equipamentosEmUso: utilizacoes
+          equipamentosEmUso: utilizacoesAtivas
         },
         inventarios
       });
@@ -929,9 +968,17 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
   if (cleanUrl.match(/\/equipamentos\/\d+\/historico/)) {
     const id = Number(cleanUrl.split('/')[2]);
     const equip = db.equipamentos.find(e => e.id === id) || db.equipamentos[0];
-    const utilizacoes = db.utilizacoes.filter(u => u.equipamento_id === id);
-    const ocorrencias = db.ocorrencias.filter(o => o.equipamento_id === id);
-    const manutencoes = db.manutencoes.filter(m => m.equipamento_id === id);
+    const utilizacoes = (db.utilizacoes || [])
+      .filter(u => Number(u.equipamento_id) === id)
+      .map(u => ({
+        ...u,
+        data_checkin: u.data_checkin || u.data_inicio,
+        data_inicio: u.data_inicio || u.data_checkin,
+        data_checkout: u.data_checkout || u.data_fim,
+        data_fim: u.data_fim || u.data_checkout
+      }));
+    const ocorrencias = (db.ocorrencias || []).filter(o => Number(o.equipamento_id) === id);
+    const manutencoes = (db.manutencoes || []).filter(m => Number(m.equipamento_id) === id);
     return ok({
       equipamento: equip,
       utilizacoes,
@@ -1389,14 +1436,20 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
     const eq = db.equipamentos.find(e => e.id === Number(data.equipamento_id));
     const storedUser = localStorage.getItem('labcontrol_user');
     const u = storedUser ? JSON.parse(storedUser) : db.usuarios[0];
+    const nowIso = new Date().toISOString();
+    const horaFormatada = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const nova = {
       id: Date.now(),
       usuario_id: u.id,
       usuario_nome: u.nome,
       equipamento_id: Number(data.equipamento_id),
       equipamento_nome: eq ? eq.nome : 'Equipamento',
-      data_inicio: new Date().toISOString(),
+      data_inicio: nowIso,
+      data_checkin: nowIso,
       data_fim: null,
+      data_checkout: null,
+      condicao_inicial: data.condicao_inicial || 'Normal / Operacional',
+      condicao_retirada: data.condicao_inicial || 'Normal / Operacional',
       status: 'em_uso',
       observacoes: data.observacoes || 'Check-in realizado via QR Code'
     };
@@ -1405,26 +1458,53 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
       eq.status = 'em_uso';
       eq.status_operacional = 'em_uso';
     }
+
+    // 1. Confirmação para o usuário
+    addMockNotification(db, u.id, {
+      tipo: 'checkin_realizado',
+      titulo: 'Check-in confirmado',
+      mensagem: `Check-in do equipamento "${nova.equipamento_nome}" realizado com sucesso às ${horaFormatada}. Bom uso!`,
+      link: '/checkin-checkout',
+      entidade: 'utilizacao',
+      entidade_id: nova.id
+    });
+
+    // 2. Alerta para a administração
+    notifyMockRole(db, 'admin', u.id, {
+      tipo: 'checkin_admin',
+      titulo: 'Novo Check-in registrado',
+      mensagem: `${u.nome} realizou check-in do equipamento "${nova.equipamento_nome}" às ${horaFormatada}.`,
+      link: `/equipamentos/${nova.equipamento_id}`,
+      entidade: 'utilizacao',
+      entidade_id: nova.id
+    });
+
     saveStorage(db);
     return ok(nova);
   }
   if (cleanUrl === '/utilizacoes/checkout') {
     const ut = db.utilizacoes.find(u => u.id === Number(data.utilizacao_id) || u.equipamento_id === Number(data.equipamento_id));
     if (ut) {
-      ut.data_fim = new Date().toISOString();
-      ut.status = 'CONCLUIDA';
+      const nowIso = new Date().toISOString();
+      const horaFormatada = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      ut.data_fim = nowIso;
+      ut.data_checkout = nowIso;
+      ut.status = 'finalizado';
       ut.condicao_devolucao = data.condicao_devolucao;
+      ut.condicao_final = data.condicao_devolucao;
       ut.foto_evidencia = data.foto_evidencia || null;
       ut.foto_metadata = data.foto_metadata || null;
       ut.houve_avaria = data.houve_avaria ? 1 : 0;
       ut.relato_avaria = data.relato_avaria || null;
 
+      const storedUser = localStorage.getItem('labcontrol_user');
+      const u = storedUser ? JSON.parse(storedUser) : db.usuarios[0];
       const eq = db.equipamentos.find(e => e.id === ut.equipamento_id);
+      const equipNome = eq ? eq.nome : (ut.equipamento_nome || `Equipamento #${ut.equipamento_id}`);
+
       if (data.houve_avaria) {
         if (eq) eq.status = 'manutencao';
         // Auto-create occurrence in mock
-        const storedUser = localStorage.getItem('labcontrol_user');
-        const u = storedUser ? JSON.parse(storedUser) : db.usuarios[0];
         db.ocorrencias.unshift({
           id: Date.now(),
           equipamento_id: ut.equipamento_id,
@@ -1438,13 +1518,35 @@ export function handleMockRequest(method, url, data, requestParams = {}) {
           status: 'ABERTA',
           foto_evidencia: data.foto_evidencia || null,
           foto_metadata: data.foto_metadata || null,
-          data_criacao: new Date().toISOString()
+          data_criacao: nowIso
         });
       } else {
         if (eq) eq.status = 'disponivel';
       }
+
+      // 1. Confirmação para o usuário
+      addMockNotification(db, ut.usuario_id || u.id, {
+        tipo: 'checkout_realizado',
+        titulo: 'Check-out confirmado',
+        mensagem: `Check-out do equipamento "${equipNome}" concluído com sucesso às ${horaFormatada}. Condição: ${data.condicao_devolucao}.`,
+        link: '/checkin-checkout',
+        entidade: 'utilizacao',
+        entidade_id: ut.id
+      });
+
+      // 2. Alerta para a equipe administrativa
+      const avariaAviso = data.houve_avaria ? ' (AVARIA REGISTRADA - EQUIPAMENTO EM MANUTENÇÃO)' : '';
+      notifyMockRole(db, 'admin', u.id, {
+        tipo: 'checkout_admin',
+        titulo: data.houve_avaria ? '⚠️ Check-out com Avaria Registrada' : 'Check-out registrado',
+        mensagem: `${u.nome} finalizou o uso do equipamento "${equipNome}" às ${horaFormatada}. Condição: ${data.condicao_devolucao}.${avariaAviso}`,
+        link: `/equipamentos/${ut.equipamento_id}`,
+        entidade: 'utilizacao',
+        entidade_id: ut.id
+      });
+
       saveStorage(db);
-      return ok({ message: 'Check-out finalizado', utilizacao: ut, avaria_registrada: !!data.houve_avaria });
+      return ok({ message: 'Check-out finalizado com sucesso', utilizacao: ut, avaria_registrada: !!data.houve_avaria });
     }
     return ok({ message: 'Check-out finalizado' });
   }

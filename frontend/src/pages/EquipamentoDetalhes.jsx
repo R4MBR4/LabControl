@@ -756,24 +756,43 @@ export default function EquipamentoDetalhes() {
             ) : (
               <div className="divide-y divide-slate-100">
                 {data.utilizacoes.map((u) => {
-                  const checkinDate = u.data_checkin ? new Date(u.data_checkin).toLocaleString('pt-BR') : '-';
-                  const checkoutDate = u.data_checkout ? new Date(u.data_checkout).toLocaleString('pt-BR') : 'Em andamento';
+                  const isFinalizado = ['finalizado', 'concluida', 'concluido'].includes(String(u.status || '').toLowerCase());
+                  const checkinRaw = u.data_checkin || u.data_inicio || u.criado_em || u.created_at;
+                  const checkoutRaw = u.data_checkout || u.data_fim || (isFinalizado ? (u.atualizado_em || u.data_fim || checkinRaw) : null);
+                  const checkinDate = checkinRaw ? new Date(checkinRaw).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' }) : '-';
+                  const checkoutDate = checkoutRaw
+                    ? new Date(checkoutRaw).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' })
+                    : (isFinalizado ? 'Uso encerrado' : 'Em andamento');
+
                   return (
-                    <div key={u.id} className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div>
+                    <div key={u.id} className="py-4 flex flex-col md:flex-row md:items-start justify-between gap-4">
+                      <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <User className="w-3.5 h-3.5 text-slate-400" />
                           <span className="text-xs font-semibold text-slate-800">{u.usuario_nome || `Usuário #${u.usuario_id}`}</span>
                           <span className="text-[11px] text-slate-400">({u.usuario_email || 'N/A'})</span>
                         </div>
-                        <div className="mt-1 text-xs text-slate-500 space-x-3">
-                          <span>Check-in: <strong className="text-slate-700">{checkinDate}</strong></span>
-                          <span>•</span>
-                          <span>Check-out: <strong className="text-slate-700">{checkoutDate}</strong></span>
+                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div className="flex items-center gap-2 bg-emerald-50/80 border border-emerald-100 rounded-lg px-2.5 py-1.5">
+                            <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <div>
+                              <span className="text-[10px] uppercase font-bold text-emerald-800 block">Horário Exato Check-in</span>
+                              <span className="font-semibold text-emerald-950">{checkinDate}</span>
+                            </div>
+                          </div>
+                          <div className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 border ${
+                            isFinalizado ? 'bg-blue-50/80 border-blue-100 text-blue-950' : 'bg-amber-50/80 border-amber-100 text-amber-950'
+                          }`}>
+                            <Clock className={`w-3.5 h-3.5 shrink-0 ${isFinalizado ? 'text-blue-600' : 'text-amber-600'}`} />
+                            <div>
+                              <span className="text-[10px] uppercase font-bold text-slate-600 block">Horário Real Check-out</span>
+                              <span className="font-semibold">{checkoutDate}</span>
+                            </div>
+                          </div>
                         </div>
                         <div className="mt-2 text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                          <p><strong className="text-slate-700">Condição Inicial:</strong> {u.condicao_inicial || 'Normal'}</p>
-                          <p className="mt-0.5"><strong className="text-slate-700">Condição na Devolução:</strong> {u.condicao_devolucao || u.condicao_final || 'Aguardando devolução'}</p>
+                          <p><strong className="text-slate-700">Condição Inicial:</strong> {u.condicao_inicial || u.condicao_retirada || 'Normal'}</p>
+                          <p className="mt-0.5"><strong className="text-slate-700">Condição na Devolução:</strong> {u.condicao_devolucao || u.condicao_final || (isFinalizado ? 'Devolvido / Encerrado' : 'Aguardando devolução')}</p>
                         </div>
 
                         {u.foto_evidencia && (
@@ -794,10 +813,10 @@ export default function EquipamentoDetalhes() {
                         )}
                       </div>
                       <span className={`self-start md:self-auto px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                        u.status === 'finalizado' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                        isFinalizado ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                         'bg-amber-50 text-amber-700 border border-amber-200'
                       }`}>
-                        {u.status || 'em_uso'}
+                        {isFinalizado ? 'FINALIZADO' : 'EM USO'}
                       </span>
                     </div>
                   );

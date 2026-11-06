@@ -61,7 +61,13 @@ async function getAllUtilizacoes(filters = {}) {
   sql += ` ORDER BY u.\`${pk}\` DESC`;
 
   const [rows] = await pool.query(sql, values);
-  return rows;
+  return rows.map((u) => ({
+    ...u,
+    data_checkin: u.data_checkin || u.data_inicio,
+    data_inicio: u.data_inicio || u.data_checkin,
+    data_checkout: u.data_checkout || u.data_fim,
+    data_fim: u.data_fim || u.data_checkout
+  }));
 }
 
 async function getUtilizacaoById(id, executor = pool, lock = false) {
@@ -85,7 +91,14 @@ async function getUtilizacaoById(id, executor = pool, lock = false) {
     ${lock ? 'FOR UPDATE' : ''}
   `;
   const [rows] = await executor.query(sql, [id]);
-  return rows[0] || null;
+  const row = rows[0] || null;
+  if (row) {
+    row.data_checkin = row.data_checkin || row.data_inicio;
+    row.data_inicio = row.data_inicio || row.data_checkin;
+    row.data_checkout = row.data_checkout || row.data_fim;
+    row.data_fim = row.data_fim || row.data_checkout;
+  }
+  return row;
 }
 
 /**
@@ -100,17 +113,36 @@ async function getActiveUtilizacaoByEquipamento(equipId) {
     ORDER BY \`${pk}\` DESC LIMIT 1
   `;
   const [rows] = await pool.query(sql, [equipId]);
-  return rows[0] || null;
+  const row = rows[0] || null;
+  if (row) {
+    row.data_checkin = row.data_checkin || row.data_inicio;
+    row.data_inicio = row.data_inicio || row.data_checkin;
+    row.data_checkout = row.data_checkout || row.data_fim;
+    row.data_fim = row.data_fim || row.data_checkout;
+  }
+  return row;
 }
 
 async function createCheckin(data, executor = pool) {
   const cols = await getTableColumns(TABLE);
   const checkinPayload = { ...data };
+  const now = new Date();
 
-  // Garante timestamp de checkin
-  const checkinCol = await resolveColumn(TABLE, ['data_checkin', 'checkin', 'data_inicio']);
-  if (!checkinPayload[checkinCol]) {
-    checkinPayload[checkinCol] = new Date();
+  // Garante timestamp exato de check-in tanto em data_checkin quanto data_inicio
+  if (!checkinPayload.data_checkin && !checkinPayload.data_inicio) {
+    checkinPayload.data_checkin = now;
+    checkinPayload.data_inicio = now;
+  } else {
+    checkinPayload.data_checkin = checkinPayload.data_checkin || checkinPayload.data_inicio;
+    checkinPayload.data_inicio = checkinPayload.data_inicio || checkinPayload.data_checkin;
+  }
+
+  // Compatibiliza campos de condição inicial / de retirada
+  if (!checkinPayload.condicao_retirada && checkinPayload.condicao_inicial) {
+    checkinPayload.condicao_retirada = checkinPayload.condicao_inicial;
+  }
+  if (!checkinPayload.condicao_inicial && checkinPayload.condicao_retirada) {
+    checkinPayload.condicao_inicial = checkinPayload.condicao_retirada;
   }
 
   if (cols.includes('status') && !checkinPayload.status) {
@@ -122,14 +154,23 @@ async function createCheckin(data, executor = pool) {
 }
 
 /**
- * Checkout com registro obrigatório da condição do equipamento
+ * Checkout com registro obrigatório da condição do equipamento e horário real exato
  */
 async function executeCheckout(id, checkoutData, executor = pool) {
   const cols = await getTableColumns(TABLE);
   const data = { ...checkoutData };
+  const now = new Date();
 
-  const checkoutCol = await resolveColumn(TABLE, ['data_checkout', 'checkout', 'data_fim']);
-  data[checkoutCol] = new Date();
+  // Garante horário real exato de check-out em ambas as colunas
+  data.data_checkout = now;
+  data.data_fim = now;
+
+  if (!data.condicao_devolucao && data.condicao_final) {
+    data.condicao_devolucao = data.condicao_final;
+  }
+  if (!data.condicao_final && data.condicao_devolucao) {
+    data.condicao_final = data.condicao_devolucao;
+  }
 
   if (cols.includes('status')) {
     data.status = 'finalizado';

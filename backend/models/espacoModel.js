@@ -63,9 +63,34 @@ async function getEspacoDetalhes(id) {
     FROM utilizacao ut
     JOIN equipamento eq ON ut.equipamento_id = eq.id
     JOIN usuario u ON ut.usuario_id = u.id
-    WHERE eq.espaco_id = ? AND ut.status = 'em_uso'
+    WHERE eq.espaco_id = ? AND LOWER(ut.status) = 'em_uso'
     ORDER BY ut.data_inicio DESC
   `, [id]);
+
+  // Histórico completo de utilizações no espaço com timestamps
+  let utilizacoesEspaco = [];
+  try {
+    const [uRows] = await pool.query(`
+      SELECT ut.*,
+             u.nome AS usuario_nome, u.email AS usuario_email,
+             eq.nome AS equipamento_nome, eq.codigo_patrimonio, eq.codigo_labcontrol
+      FROM utilizacao ut
+      JOIN equipamento eq ON ut.equipamento_id = eq.id
+      JOIN usuario u ON ut.usuario_id = u.id
+      WHERE eq.espaco_id = ?
+      ORDER BY ut.data_inicio DESC
+      LIMIT 50
+    `, [id]);
+    utilizacoesEspaco = (uRows || []).map((u) => ({
+      ...u,
+      data_checkin: u.data_checkin || u.data_inicio,
+      data_inicio: u.data_inicio || u.data_checkin,
+      data_checkout: u.data_checkout || u.data_fim,
+      data_fim: u.data_fim || u.data_checkout
+    }));
+  } catch (e) {
+    utilizacoesEspaco = [];
+  }
 
   // Reserva atualmente em andamento no laboratório
   const [reservaAtual] = await pool.query(`
@@ -99,9 +124,16 @@ async function getEspacoDetalhes(id) {
     espaco,
     equipamentos,
     reservas,
+    utilizacoes: utilizacoesEspaco,
     utilizacaoAtual: {
       reservaEmAndamento: reservaAtual[0] || null,
-      equipamentosEmUso: utilizacoesAtivas
+      equipamentosEmUso: (utilizacoesAtivas || []).map((u) => ({
+        ...u,
+        data_checkin: u.data_checkin || u.data_inicio,
+        data_inicio: u.data_inicio || u.data_checkin,
+        data_checkout: u.data_checkout || u.data_fim,
+        data_fim: u.data_fim || u.data_checkout
+      }))
     },
     inventarios
   };

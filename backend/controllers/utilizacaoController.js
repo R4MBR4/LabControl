@@ -5,6 +5,7 @@ const ocorrenciaModel = require('../models/ocorrenciaModel');
 const reservaModel = require('../models/reservaModel');
 const { pool } = require('../models/dbHelper');
 const auditoriaModel = require('../models/auditoriaModel');
+const notificacaoModel = require('../models/notificacaoModel');
 
 async function list(req, res) {
   try {
@@ -184,6 +185,45 @@ async function checkin(req, res) {
       usuario_id,
       detalhes: { reserva_id: finalReservaId, condicao_inicial: payload.condicao_inicial }
     }, connection);
+
+    // Notificações: confirmação para o usuário e alerta para os administradores
+    const utilizationId = novaUtilizacao.id || novaUtilizacao.id_utilizacao;
+    const equipNome = equip.nome || `Equipamento #${targetEquipId}`;
+    const usuarioNome = req.user?.nome || `Usuário #${usuario_id}`;
+    const horaCheckin = new Date();
+    const horaFormatada = horaCheckin.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+    try {
+      // 1. Confirmação para o usuário que realizou o check-in
+      await notificacaoModel.createForUser({
+        usuario_id,
+        tipo: 'checkin_realizado',
+        titulo: 'Check-in confirmado',
+        mensagem: `Check-in do equipamento "${equipNome}" realizado com sucesso às ${horaFormatada}. Bom uso!`,
+        link: '/checkin-checkout',
+        entidade: 'utilizacao',
+        entidade_id: utilizationId
+      }, connection);
+
+      // 2. Alerta para os administradores (exclui o próprio usuário se for admin para não duplicar)
+      const isUserAdmin = ['admin', 'administrador'].includes(userRole);
+      await notificacaoModel.createForRole(
+        'admin',
+        {
+          tipo: 'checkin_admin',
+          titulo: 'Novo Check-in registrado',
+          mensagem: `${usuarioNome} realizou check-in do equipamento "${equipNome}" às ${horaFormatada}.`,
+          link: `/equipamentos/${targetEquipId}`,
+          entidade: 'utilizacao',
+          entidade_id: utilizationId
+        },
+        connection,
+        isUserAdmin ? usuario_id : null
+      );
+    } catch (notifErr) {
+      console.warn('[Utilizacao] Falha ao registrar notificações de check-in:', notifErr.message);
+    }
+
     await connection.commit();
     transactionStarted = false;
 
@@ -353,6 +393,46 @@ async function checkout(req, res) {
     // Atualiza status da reserva vinculada para 'concluida'
     if (utilizacao.reserva_id) {
       await reservaModel.updateReserva(utilizacao.reserva_id, { status: 'concluida' }, connection);
+    }
+
+    // Notificações: confirmação para o usuário e alerta para os administradores
+    const equipRow = await equipamentoModel.getEquipamentoById(targetEquipId, connection);
+    const equipNome = equipRow?.nome || utilizacao.equipamento_nome || `Equipamento #${targetEquipId}`;
+    const targetUserNome = utilizacao.usuario_nome || req.user?.nome || `Usuário #${usuario_id}`;
+    const targetUserId = utilizacao.usuario_id || utilizacao.id_usuario || usuario_id;
+    const horaCheckout = new Date();
+    const horaFormatada = horaCheckout.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+    try {
+      // 1. Confirmação para o usuário
+      await notificacaoModel.createForUser({
+        usuario_id: targetUserId,
+        tipo: 'checkout_realizado',
+        titulo: 'Check-out confirmado',
+        mensagem: `Check-out do equipamento "${equipNome}" concluído com sucesso às ${horaFormatada}. Condição: ${condition}.`,
+        link: '/checkin-checkout',
+        entidade: 'utilizacao',
+        entidade_id: utilizationId
+      }, connection);
+
+      // 2. Alerta para a equipe administrativa
+      const isUserAdmin = ['admin', 'administrador'].includes(role);
+      const avariaAviso = isDamaged ? ' (AVARIA REGISTRADA - EQUIPAMENTO EM MANUTENÇÃO)' : '';
+      await notificacaoModel.createForRole(
+        'admin',
+        {
+          tipo: 'checkout_admin',
+          titulo: isDamaged ? '⚠️ Check-out com Avaria Registrada' : 'Check-out registrado',
+          mensagem: `${targetUserNome} finalizou o uso do equipamento "${equipNome}" às ${horaFormatada}. Condição: ${condition}.${avariaAviso}`,
+          link: `/equipamentos/${targetEquipId}`,
+          entidade: 'utilizacao',
+          entidade_id: utilizationId
+        },
+        connection,
+        isUserAdmin ? usuario_id : null
+      );
+    } catch (notifErr) {
+      console.warn('[Utilizacao] Falha ao registrar notificações de check-out:', notifErr.message);
     }
 
     await connection.commit();

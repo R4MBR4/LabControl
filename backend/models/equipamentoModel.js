@@ -302,8 +302,16 @@ async function getEquipamentoHistorico(id) {
     `, [id])
   ]);
 
+  const utilizacoes = (utilizacoesRows[0] || []).map((u) => ({
+    ...u,
+    data_checkin: u.data_checkin || u.data_inicio,
+    data_inicio: u.data_inicio || u.data_checkin,
+    data_checkout: u.data_checkout || u.data_fim,
+    data_fim: u.data_fim || u.data_checkout
+  }));
+
   return {
-    utilizacoes: utilizacoesRows[0],
+    utilizacoes,
     ocorrencias: ocorrenciasRows[0],
     manutencoes: manutencoesRows[0]
   };
